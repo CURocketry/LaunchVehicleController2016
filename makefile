@@ -3,10 +3,11 @@ PROG?=main
 all: $(PROG)
 
 run: all 
-	./$(PROG).o
+	build/$(PROG)
 
 clean:
-	-rm $(PROG).o
+	-rm -rf build
 
-$(PROG): $(PROG).c
-	gcc $(filter %.c, $^) -o $@.o -lxbee -lpthread -lrt -lm -I.
+$(PROG): src/$(PROG).c
+	mkdir -p build
+	gcc $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lm -I.
