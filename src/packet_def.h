@@ -1,6 +1,8 @@
 #ifndef _PACKET_DEF_H
 #define _PACKET_DEF_H
 
+#include <stdint.h>
+
 //make sure these match on the receiving end
 #define MARKER_LAT 0xFB
 #define MARKER_LON 0xFC
@@ -24,9 +26,9 @@ typedef struct {
 } Flags;
 
 typedef struct {
-  long latitude;
-  long longitude;
-  int altitude;
+  uint32_t latitude;
+  uint32_t longitude;
+  int16_t altitude;
   Flags flags;
 } Payload;
 
