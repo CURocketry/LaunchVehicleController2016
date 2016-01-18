@@ -16,6 +16,14 @@
 #define DIR_PAYLOAD_ABORT 0xAD
 #define DIR_PAYLOAD_ABORT_CANCEL 0xAE
 
+//flags
+typedef uint8_t flags_t;
+#define FG_TEST          1
+#define FG_LANDED        1 << 1
+#define FG_MAIN_LAUNCH   1 << 2
+#define FG_PAYLOAD_ABORT 1 << 3
+#define FG_GPS_FIX       1 << 4
+
 typedef struct {
   unsigned int gps_fix : 1;
   unsigned int payload_abort : 1;

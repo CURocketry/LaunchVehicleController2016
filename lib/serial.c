@@ -1,12 +1,20 @@
 #include "serial.h"
 /**
-The values for speed are B115200, B230400, B9600, B19200, B38400, B57600, B1200, B2400, B4800, etc. The values for parity are 0 (meaning no parity), PARENB|PARODD (enable parity and use odd), PARENB (enable parity and use even), PARENB|PARODD|CMSPAR (mark parity), and PARENB|CMSPAR (space parity).
+The values for speed are B115200, B230400, B9600, B19200, B38400, B57600, B1200, 
+B2400, B4800, etc. The values for parity are 0 (meaning no parity), 
+PARENB|PARODD (enable parity and use odd), PARENB (enable parity and use even), 
+PARENB|PARODD|CMSPAR (mark parity), and PARENB|CMSPAR (space parity).
 
-"Blocking" sets whether a read() on the port waits for the specified number of characters to arrive. Setting no blocking means that a read() returns however many characters are available without waiting for more, up to the buffer limit.
+"Blocking" sets whether a read() on the port waits for the specified number of 
+characters to arrive. Setting no blocking means that a read() returns however 
+many characters are available without waiting for more, up to the buffer limit.
 
 Addendum:
 
-CMSPAR is needed only for choosing mark and space parity, which is uncommon. For most applications, it can be omitted. My header file /usr/include/bits/termios.h enables definition of CMSPAR only if the preprocessor symbol __USE_MISC is defined. That definition occurs (in features.h) with
+CMSPAR is needed only for choosing mark and space parity, which is uncommon. 
+For most applications, it can be omitted. My header file /usr/include/bits/termios.h 
+enables definition of CMSPAR only if the preprocessor symbol __USE_MISC is defined. 
+That definition occurs (in features.h) with
 
 #if defined _BSD_SOURCE || defined _SVID_SOURCE
  #define __USE_MISC     1
@@ -69,8 +77,8 @@ void set_blocking (int fd, int should_block)
         memset (&tty, 0, sizeof tty);
         if (tcgetattr (fd, &tty) != 0)
         {
-                printf ("error %d from tggetattr", errno);
-                return;
+            printf ("error %d from tggetattr", errno);
+            return;
         }
 
         tty.c_cc[VMIN]  = should_block ? 1 : 0;

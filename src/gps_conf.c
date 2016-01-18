@@ -1,7 +1,6 @@
-#include "string.h" 
+#include <string.h> 
 #include "gps_conf.h"
-#include "lib/serial.h"
-//TODO amend makefile with lib compilation
+#include <serial.h>
 
 void sendCommand(int handle, const char* cmd) {
     int size = strlen(cmd);
