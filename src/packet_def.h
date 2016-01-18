@@ -25,19 +25,10 @@ typedef uint8_t flags_t;
 #define FG_GPS_FIX       1 << 4
 
 typedef struct {
-  unsigned int gps_fix : 1;
-  unsigned int payload_abort : 1;
-  unsigned int main_launch : 1;
-  unsigned int landed : 1;
-  unsigned int test : 1;
-  unsigned int padding : 3;
-} Flags;
-
-typedef struct {
   uint32_t latitude;
   uint32_t longitude;
   int16_t altitude;
-  Flags flags;
+  flags_t flags;
 } Payload;
 
 #endif

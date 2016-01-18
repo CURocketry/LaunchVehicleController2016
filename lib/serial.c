@@ -22,14 +22,15 @@ That definition occurs (in features.h) with
 
 The introductory comments of <features.h> says:
 
-/* These are defined by the user (or the compiler)
-   to specify the desired environment:
+// These are defined by the user (or the compiler)
+//   to specify the desired environment:
 
 ...
    _BSD_SOURCE          ISO C, POSIX, and 4.3BSD things.
    _SVID_SOURCE         ISO C, POSIX, and SVID things.
 ...
- */
+
+*/
 
 int set_interface_attribs (int fd, int speed, int parity)
 {

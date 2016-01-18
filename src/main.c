@@ -5,11 +5,13 @@
 #include <time.h>
 #include <math.h>
 
+#include <crt_common.h>
 #include <xbee.h>
 #include <gps.h>
 
 #include "packet_def.h"
 
+#define IGNORE_GPS true;
 typedef unsigned char byte;
 
 #define LAUNCH_TX_PD 250;
@@ -19,7 +21,7 @@ byte* stream(byte marker, void* ptr, void *n, int n_size);
 void set_gps_payload(Payload *payload, struct gps_fix_t data);
 
 //Payload variables
-#define MAX_BUF 32  // Maximum payload size 
+#define MAX_BUF 64  // Maximum payload size 
 
 Payload payload;
 Payload* ptr_payload = &payload;
@@ -50,6 +52,7 @@ int main(void) {
     struct xbee_conAddress address;
     xbee_err ret;
 
+#ifndef IGNORE_GPS
     //connect to the gps
     if ((ret = gps_open("localhost", "2947", &gps_data)) == -1) {
         printf("code: %d, reason: %s\n", ret, gps_errstr(ret));
@@ -57,9 +60,9 @@ int main(void) {
     }
 
     gps_stream(&gps_data, WATCH_ENABLE | WATCH_JSON, NULL);
- 
+#endif
     // connect to the xbee
-    if ((ret = xbee_setup(&xbee, "xbee3", "/dev/ttyUSB0", 57600)) != XBEE_ENONE) {
+    if ((ret = xbee_setup(&xbee, "xbee3", "/dev/xbee", 57600)) != XBEE_ENONE) {
         printf("ret: %d (%s)\n", ret, xbee_errorToStr(ret));
 		return ret;
 	}
@@ -104,8 +107,9 @@ int main(void) {
         payload.latitude = 0;
         payload.longitude = 0;
         payload.altitude = 0;
-        payload.flags.gps_fix = 0;
+        payload.flags &= ~FG_GPS_FIX;
        
+#ifndef IGNORE_GPS
         // wait for 200ms to receive data 
         if (gps_waiting (&gps_data, 200000)) {
         /* read data */
@@ -124,6 +128,8 @@ int main(void) {
             }
         }
     }
+#endif
+
         //clear buffer
         memset( buf_start, 0, MAX_BUF);
 
@@ -140,7 +146,9 @@ int main(void) {
 
         //buffer size is the difference between the current and start pointers
         buf_size = buf_curr - buf_start;
-          
+        
+        printh(buf_start, buf_size);
+
         //rpi is little endian (LSB first)
         unsigned char retVal;
         if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
@@ -150,7 +158,7 @@ int main(void) {
                 printf("error: %s\n", xbee_errorToStr(ret));
             }
         }
-        usleep(1000000);
+        msleep(50);
     }
 
 
@@ -160,8 +168,10 @@ int main(void) {
 	}
 
 
+#ifndef IGNORE_GPS
     gps_stream(&gps_data, WATCH_DISABLE, NULL);
     gps_close (&gps_data);
+#endif
 	xbee_shutdown(xbee);
 
 	return 0;
@@ -205,3 +215,4 @@ void set_gps_payload(Payload *payload, struct gps_fix_t data) {
   payload->longitude = (uint32_t) data.longitude*10000;
   payload->altitude = (uint16_t) data.altitude;
 }
+
