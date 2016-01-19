@@ -11,7 +11,7 @@
 
 #include "packet_def.h"
 
-#define IGNORE_GPS true;
+#define IGNORE_GPS
 typedef unsigned char byte;
 
 #define LAUNCH_TX_PD 250;
@@ -49,6 +49,7 @@ int main(void) {
     struct gps_data_t gps_data; 
     struct xbee *xbee;
     struct xbee_con *con;
+    struct xbee_conSettings conset;
     struct xbee_conAddress address;
     xbee_err ret;
 
@@ -66,7 +67,7 @@ int main(void) {
         printf("ret: %d (%s)\n", ret, xbee_errorToStr(ret));
 		return ret;
 	}
-
+    xbee_logLevelSet(xbee,100);
 	memset(&address, 0, sizeof(address));
 	address.addr64_enabled = 1;
 	address.addr64[0] = 0x00;
@@ -86,6 +87,10 @@ int main(void) {
 		xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
 		return ret;
 	}
+
+    xbee_conSettings(con, NULL, &conset);
+    conset.noWaitForAck = 0;
+    xbee_conSettings(con,  &conset, NULL);
 
 	if ((ret = xbee_conCallbackSet(con, cbReceive, NULL)) != XBEE_ENONE) {
 		xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
@@ -112,37 +117,33 @@ int main(void) {
 #ifndef IGNORE_GPS
         // wait for 200ms to receive data 
         if (gps_waiting (&gps_data, 200000)) {
-        /* read data */
-        if ((ret = gps_read(&gps_data)) == -1) {
-            printf("error occured reading gps data. code: %d, reason: %s\n", ret, gps_errstr(ret));
-        } else {
-            /* Display data from the GPS receiver. */
-            if ((gps_data.status == STATUS_FIX) && 
-                (gps_data.fix.mode == MODE_2D || gps_data.fix.mode == MODE_3D) &&
-                !isnan(gps_data.fix.latitude) && 
-                !isnan(gps_data.fix.longitude)) {
-                    printf("latitude: %f, longitude: %f, speed: %f, altitude: %f\n", gps_data.fix.latitude, gps_data.fix.longitude, gps_data.fix.speed, gps_data.fix.altitude);
-                set_gps_payload(&payload, gps_data.fix);
+            /* read data */
+            if ((ret = gps_read(&gps_data)) == -1) {
+                printf("error occured reading gps data. code: %d, reason: %s\n", ret, gps_errstr(ret));
             } else {
-                printf("no GPS data available\n");
+                /* Display data from the GPS receiver. */
+                if ((gps_data.status == STATUS_FIX) && 
+                    (gps_data.fix.mode == MODE_2D || gps_data.fix.mode == MODE_3D) &&
+                    !isnan(gps_data.fix.latitude) && 
+                    !isnan(gps_data.fix.longitude)) {
+                        printf("latitude: %f, longitude: %f, speed: %f, altitude: %f\n", gps_data.fix.latitude, gps_data.fix.longitude, gps_data.fix.speed, gps_data.fix.altitude);
+                        set_gps_payload(&payload, gps_data.fix);
+                } else {
+                    printf("no GPS data available\n");
+                }
             }
         }
-    }
 #endif
 
         //clear buffer
         memset( buf_start, 0, MAX_BUF);
 
-
         //buf_start is pointer to first allocated space
         //buf_curr is pointer to next free space
-        //if (payload.latitude != 0 && payload.longitude != 0 && payload.altitude != 0) {
         buf_curr = stream(MARKER_LAT, buf_start, &(ptr_payload->latitude), sizeof(payload.latitude));
         buf_curr = stream(MARKER_LON, buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
         buf_curr = stream(MARKER_ALT, buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
-          //}
-          
-          buf_curr = stream(MARKER_FLAG, buf_curr,&(ptr_payload->flags), sizeof(payload.flags));
+        buf_curr = stream(MARKER_FLAG, buf_curr,&(ptr_payload->flags), sizeof(payload.flags));
 
         //buffer size is the difference between the current and start pointers
         buf_size = buf_curr - buf_start;
@@ -158,7 +159,7 @@ int main(void) {
                 printf("error: %s\n", xbee_errorToStr(ret));
             }
         }
-        msleep(50);
+        msleep(200);
     }
 
 
@@ -193,26 +194,9 @@ byte* stream(byte marker, void* ptr, void *n, int n_size) {
 }
 
 
-// converts lat/long from Adafruit
-// degree-minute format to decimal-degrees
-double convertDegMinToDecDeg (float degMin) {
-  double min = 0.0;
-  double decDeg = 0.0;
-
-  //get the minutes, fmod() requires double
-  min = fmod((double)degMin, 100.0);
-
-  //rebuild coordinates in decimal degrees
-  degMin = (int) ( degMin / 100 );
-  decDeg = degMin + ( min / 60 );
-
-  return decDeg;
-}
-
-
 void set_gps_payload(Payload *payload, struct gps_fix_t data) {
-  payload->latitude = (uint32_t) data.latitude*10000;
-  payload->longitude = (uint32_t) data.longitude*10000;
+  payload->latitude = (uint32_t) (data.latitude*10000);
+  payload->longitude = (uint32_t) (-1*data.longitude*10000);
   payload->altitude = (uint16_t) data.altitude;
 }
 
