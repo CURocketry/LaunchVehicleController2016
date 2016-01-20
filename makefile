@@ -24,12 +24,12 @@ lib: $(addprefix $(BUILDDIR)/, $(patsubst %.c,%.o,$(wildcard $(LIBDIR)/*.c)))
 
 #autodetect lib sources
 $(BUILDDIR)/$(LIBDIR)/%.o : $(LIBDIR)/%.c
-	$(CC) -c  -o $@ $< $(CFLAGS)
+	$(CC) -c  -o $@ $< -lwiringPi -I. $(CFLAGS)
 
 COMPLIBS = $(wildcard $(BUILDDIR)/$(LIBDIR)/*.o)
 
 $(PROG): src/$(PROG).c
-	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lm -lgps -I. -Ilib $(COMPLIBS) $(CFLAGS)
+	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lm -lgps -lwiringPi -I. -Ilib $(COMPLIBS) $(CFLAGS)
 
 gps_conf: src/gps_conf.c
-	$(CC) $< -o $(BUILDDIR)/$@ -Ilib $(COMPLIBS) $(CFLAGS)
+	$(CC) $< -o $(BUILDDIR)/$@ -Ilib -lwiringPi $(COMPLIBS) $(CFLAGS)
