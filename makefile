@@ -1,23 +1,28 @@
 PROG?=main
 CC:=gcc
-CFLAGS:=-Wall -std=gnu99
+CFLAGS:=-Wall -std=gnu99 -O3
 BUILDDIR:=build
 LIBDIR:=lib
+
+BINARYNAME:= crtlvc
 
 .PHONY: all run clean prep lib
 
 all: prep lib gps_conf $(PROG)
 
 run:  all 
-	build/$(PROG)
+	$(BUILDDIR)/$(PROG)
 
 clean:
-	-rm -rf build
+	-rm -rf $(BUILDDIR)
 
 prep:
-	mkdir -p build/lib
+	mkdir -p $(BUILDDIR)/$(LIBDIR)
 
-test: lib gps_conf
+install:
+	cp $(BUILDDIR)/$(PROG) /usr/bin/$(BINARYNAME) 
+	cp $(BINARYNAME)_initd /etc/init.d/$(BINARYNAME)
+	update-rc.d $(BINARYNAME) defaults
 
 #build everything in the lib directory
 lib: $(addprefix $(BUILDDIR)/, $(patsubst %.c,%.o,$(wildcard $(LIBDIR)/*.c))) 

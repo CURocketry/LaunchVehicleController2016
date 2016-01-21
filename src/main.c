@@ -19,12 +19,14 @@ typedef unsigned char byte;
 
 byte* stream(byte marker, void* ptr, void *n, int n_size); 
 void set_gps_payload(Payload *payload, struct gps_fix_t data);
+int  _xbee_startup(struct xbee **xbee, struct xbee_con **con,struct  xbee_conAddress *address);
 
 //Payload variables
 #define MAX_BUF 64  // Maximum payload size 
 
 Payload payload;
 Payload* ptr_payload = &payload;
+bool connected;
 
 int tx_pd = STANDBY_TX_PD; //time between message transmission, in ms
 
@@ -49,10 +51,9 @@ int main(void) {
     struct gps_data_t gps_data; 
     struct xbee *xbee;
     struct xbee_con *con;
-    struct xbee_conSettings conset;
     struct xbee_conAddress address;
     xbee_err ret;
-
+    connected = false;
 #ifndef IGNORE_GPS
     //connect to the gps
     if ((ret = gps_open("localhost", "2947", &gps_data)) == -1) {
@@ -62,13 +63,10 @@ int main(void) {
 
     gps_stream(&gps_data, WATCH_ENABLE | WATCH_JSON, NULL);
 #endif
-    // connect to the xbee
-    if ((ret = xbee_setup(&xbee, "xbee3", "/dev/xbee", 57600)) != XBEE_ENONE) {
-        printf("ret: %d (%s)\n", ret, xbee_errorToStr(ret));
-		return ret;
-	}
-    xbee_logLevelSet(xbee,100);
-	memset(&address, 0, sizeof(address));
+   
+   
+    // initialize the address of the remote xbee
+    memset(&address, 0, sizeof(address));
 	address.addr64_enabled = 1;
 	address.addr64[0] = 0x00;
 	address.addr64[1] = 0x13;
@@ -78,29 +76,16 @@ int main(void) {
 	address.addr64[5] = 0xBF;
 	address.addr64[6] = 0x56;
 	address.addr64[7] = 0xA5;
-	if ((ret = xbee_conNew(xbee, &con, "Data", &address)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conNew() returned: %d (%s)", ret, xbee_errorToStr(ret));
-		return ret;
-	}
-
-	if ((ret = xbee_conDataSet(con, xbee, NULL)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conDataSet() returned: %d", ret);
-		return ret;
-	}
-
-    xbee_conSettings(con, NULL, &conset);
-    conset.noWaitForAck = 0;
-    xbee_conSettings(con,  &conset, NULL);
-
-	if ((ret = xbee_conCallbackSet(con, cbReceive, NULL)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
-		return ret;
-	}
+    
+    if ((ret = _xbee_startup(&xbee, &con, &address)) != XBEE_ENONE) {
+        return ret;
+    }
     
     for (;;) {
         void *p;
 
 
+        /*
         //break if receiving callback is disconnected
 		if ((ret = xbee_conCallbackGet(con, (xbee_t_conCallback*)&p)) != XBEE_ENONE) {
 			xbee_log(xbee, -1, "xbee_conCallbackGet() returned: %d", ret);
@@ -108,7 +93,7 @@ int main(void) {
 		}
 
 		if (p == NULL) break;
-        
+        */
         payload.latitude = 0;
         payload.longitude = 0;
         payload.altitude = 0;
@@ -152,12 +137,31 @@ int main(void) {
 
         //rpi is little endian (LSB first)
         unsigned char retVal;
+        if (connected) {
         if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
             if (ret == XBEE_ETX) {
                 printf("tx error (0x%02X)\n", retVal);
-            } else {
+            } else { 
+                //if (ret == XBEE_ETIMEOUT || ret == XBEE_EINUSE || ret == XBEE_EINVAL) {
+               // timeout workaround - disconnect and reconnect
                 printf("error: %s\n", xbee_errorToStr(ret));
+                printf("timeout\n");
+                xbee_conEnd(con);
+                xbee_shutdown(xbee);
+                connected = false;
+			    xbee_conCallbackSet(con, NULL, NULL);
+                //usleep(50000);
+                sleep(5);
+                _xbee_startup(&xbee,&con,&address);
             }
+            /*else {
+                printf("error: %s\n", xbee_errorToStr(ret));
+            }*/
+        }
+        }
+        else {
+            printf("loop startup\n");
+            _xbee_startup(&xbee,&con,&address);
         }
         msleep(200);
     }
@@ -173,7 +177,8 @@ int main(void) {
     gps_stream(&gps_data, WATCH_DISABLE, NULL);
     gps_close (&gps_data);
 #endif
-	xbee_shutdown(xbee);
+	
+    xbee_shutdown(xbee);
 
 	return 0;
 }
@@ -194,9 +199,43 @@ byte* stream(byte marker, void* ptr, void *n, int n_size) {
 }
 
 
+int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAddress *address) {
+    xbee_err ret;
+    struct xbee_conSettings conset;
+    printf("Start setup\n");
+    // connect to the xbee
+    if ((ret = xbee_setup(xbee, "xbee3", "/dev/xbee", 57600)) != XBEE_ENONE) {
+        printf("ret: %d (%s)\n", ret, xbee_errorToStr(ret));
+		return ret;
+    }
+	
+    xbee_logLevelSet(*xbee,5);
+	
+    if ((ret = xbee_conNew(*xbee, con, "Data", address)) != XBEE_ENONE) {
+		xbee_log(*xbee, -1, "xbee_conNew() returned: %d (%s)", ret, xbee_errorToStr(ret));
+		return ret;
+	}
+
+	if ((ret = xbee_conDataSet(*con, *xbee, NULL)) != XBEE_ENONE) {
+		xbee_log(*xbee, -1, "xbee_conDataSet() returned: %d", ret);
+		return ret;
+	}
+
+    xbee_conSettings(*con, NULL, &conset);
+    conset.noWaitForAck = 0;
+    xbee_conSettings(*con,  &conset, NULL);
+
+	if ((ret = xbee_conCallbackSet(*con, cbReceive, NULL)) != XBEE_ENONE) {
+		xbee_log(*xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
+		return ret;
+	}
+    printf("setup done\n");
+    connected = true;
+    return XBEE_ENONE;
+}
+
 void set_gps_payload(Payload *payload, struct gps_fix_t data) {
   payload->latitude = (uint32_t) (data.latitude*10000);
   payload->longitude = (uint32_t) (-1*data.longitude*10000);
   payload->altitude = (uint16_t) data.altitude;
 }
-

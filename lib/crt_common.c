@@ -1,7 +1,14 @@
 #include "crt_common.h"
 
 int msleep(unsigned int msecs) {
-    return usleep(msecs * 1000);
+    if (msecs < 1000) {
+        return usleep(msecs * 1000);
+    }
+    else {
+        sleep (msecs / 1000);
+        return usleep(msecs % 1000);
+    }
+
 }
 
 void printh(unsigned char *buf, int size) {

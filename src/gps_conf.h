@@ -1,5 +1,5 @@
-#ifndef _GPS_CONF_H
-#define _GPS_CONF_H
+#ifndef __GPS_CONF_H__
+#define __GPS_CONF_H__
 
 // Command definitions taken from the Adafruit GPS Library
 // https://github.com/adafruit/Adafruit-GPS-Library

@@ -1,5 +1,5 @@
-#ifndef _CRT_COMMON_H
-#define _CRT_COMMON_H
+#ifndef __CRT_COMMON_H__
+#define __CRT_COMMON_H__
 
 #include <unistd.h>
 #include <stdio.h>
