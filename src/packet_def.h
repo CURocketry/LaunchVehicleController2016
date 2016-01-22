@@ -3,32 +3,37 @@
 
 #include <stdint.h>
 
-//make sure these match on the receiving end
-#define MARKER_LAT 0xFB
-#define MARKER_LON 0xFC
-#define MARKER_ALT 0xFD
-#define MARKER_FLAG 0xFE
 
-//directives received from ground station
-//make sure these match on the sending end
-#define DIR_TEST 0xAB
-#define DIR_BEGIN_LAUNCH 0xAC
-#define DIR_PAYLOAD_ABORT 0xAD
-#define DIR_PAYLOAD_ABORT_CANCEL 0xAE
+// commands
+typedef uint8_t commands_t;
+
+#define CD_EN_CAMERA    1
+#define CD_DS_CAMERA    1 << 1
+#define CD_EN_TRANS     1 << 2
+#define CD_DS_TRANS     1 << 3
+#define CD_MAX_FREQ     1 << 4
+#define CD_MIN_FREQ     1 << 5
+#define CD_EN_LAUNCH    1 << 6
+#define CD_DS_LAUNCH    1 << 7
 
 //flags
 typedef uint8_t flags_t;
 #define FG_TEST          1
-#define FG_LANDED        1 << 1
-#define FG_MAIN_LAUNCH   1 << 2
-#define FG_PAYLOAD_ABORT 1 << 3
-#define FG_GPS_FIX       1 << 4
+#define FG_GPS_FIX       1 << 1
+#define FG_CAMERA        1 << 2 
+#define FG_FREQ          1 << 3
+#define FG_LAUNCH        1 << 4
 
 typedef struct {
-  uint32_t latitude;
-  uint32_t longitude;
+  int32_t latitude;
+  int32_t longitude;
   int16_t altitude;
   flags_t flags;
+  int16_t gyro_z;
+  int8_t acc_z;
+  int8_t acc_x;
+  int8_t acc_y;
+  uint8_t temp;
 } Payload;
 
 #endif

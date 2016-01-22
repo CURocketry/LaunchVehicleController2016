@@ -11,18 +11,20 @@
 
 #include "packet_def.h"
 
-#define IGNORE_GPS
+#define DEBUG_IGNORE_GPS
+
 typedef unsigned char byte;
 
-#define LAUNCH_TX_PD 250;
-#define STANDBY_TX_PD 3000;
+#define TRANS_PD_MIN 200 //ms
+#define TRANS_PD_MAX 5000 //ms
+#define STANDBY_TX_PD 3000
 
-byte* stream(byte marker, void* ptr, void *n, int n_size); 
+byte* stream(void* ptr, void *n, int n_size); 
 void set_gps_payload(Payload *payload, struct gps_fix_t data);
 int  _xbee_startup(struct xbee **xbee, struct xbee_con **con,struct  xbee_conAddress *address);
 
 //Payload variables
-#define MAX_BUF 64  // Maximum payload size 
+#define MAX_BUF 32  // Maximum payload size 
 
 Payload payload;
 Payload* ptr_payload = &payload;
@@ -54,7 +56,7 @@ int main(void) {
     struct xbee_conAddress address;
     xbee_err ret;
     connected = false;
-#ifndef IGNORE_GPS
+#ifndef DEBUG_IGNORE_GPS
     //connect to the gps
     if ((ret = gps_open("localhost", "2947", &gps_data)) == -1) {
         printf("code: %d, reason: %s\n", ret, gps_errstr(ret));
@@ -82,24 +84,13 @@ int main(void) {
     }
     
     for (;;) {
-        void *p;
 
-
-        /*
-        //break if receiving callback is disconnected
-		if ((ret = xbee_conCallbackGet(con, (xbee_t_conCallback*)&p)) != XBEE_ENONE) {
-			xbee_log(xbee, -1, "xbee_conCallbackGet() returned: %d", ret);
-			return ret;
-		}
-
-		if (p == NULL) break;
-        */
         payload.latitude = 0;
         payload.longitude = 0;
         payload.altitude = 0;
         payload.flags &= ~FG_GPS_FIX;
        
-#ifndef IGNORE_GPS
+#ifndef DEBUG_IGNORE_GPS
         // wait for 200ms to receive data 
         if (gps_waiting (&gps_data, 200000)) {
             /* read data */
@@ -125,10 +116,10 @@ int main(void) {
 
         //buf_start is pointer to first allocated space
         //buf_curr is pointer to next free space
-        buf_curr = stream(MARKER_LAT, buf_start, &(ptr_payload->latitude), sizeof(payload.latitude));
-        buf_curr = stream(MARKER_LON, buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
-        buf_curr = stream(MARKER_ALT, buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
-        buf_curr = stream(MARKER_FLAG, buf_curr,&(ptr_payload->flags), sizeof(payload.flags));
+        buf_curr = stream(buf_start, &(ptr_payload->latitude), sizeof(payload.latitude));
+        buf_curr = stream(buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
+        buf_curr = stream(buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
+        buf_curr = stream(buf_curr,&(ptr_payload->flags), sizeof(payload.flags));
 
         //buffer size is the difference between the current and start pointers
         buf_size = buf_curr - buf_start;
@@ -173,7 +164,7 @@ int main(void) {
 	}
 
 
-#ifndef IGNORE_GPS
+#ifndef DEBUG_IGNORE_GPS
     gps_stream(&gps_data, WATCH_DISABLE, NULL);
     gps_close (&gps_data);
 #endif
@@ -185,13 +176,9 @@ int main(void) {
 
 
 //stream n_size bytes in n to mem loc ptr
-byte* stream(byte marker, void* ptr, void *n, int n_size) {
+byte* stream(void* ptr, void *n, int n_size) {
   //cast ptr to a byte to allow arithmetic
   byte* p = (byte*)ptr;
-
-  *p = marker; //insert marker
-  p++;
-
   memcpy( p, n, n_size ); //copy size bytes of n into p
   p += n_size; //increment pointer p
 
@@ -235,7 +222,12 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
 }
 
 void set_gps_payload(Payload *payload, struct gps_fix_t data) {
-  payload->latitude = (uint32_t) (data.latitude*10000);
-  payload->longitude = (uint32_t) (-1*data.longitude*10000);
+  payload->latitude = (int32_t) (data.latitude*10000);
+  payload->longitude = (int32_t) (-1*data.longitude*10000);
   payload->altitude = (uint16_t) data.altitude;
 }
+
+/*
+void set_imu_payload(Payload *payload, struct event_t event) {
+
+}*/
