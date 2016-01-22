@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <limits.h>
 
 #include <crt_common.h>
 #include <xbee.h>
@@ -12,35 +13,74 @@
 #include "packet_def.h"
 
 #define DEBUG_IGNORE_GPS
+#define DEBUG_IGNORE_IMU
 
 typedef unsigned char byte;
 
-#define TRANS_PD_MIN 200 //ms
-#define TRANS_PD_MAX 5000 //ms
-#define STANDBY_TX_PD 3000
+#define STANDBY_TIME_MIN_MS 300 //delay between tranmissions in ms
+#define STANDBY_TIME_MAX_MS 5000 
+int standby_time = STANDBY_TIME_MAX_MS;
 
 byte* stream(void* ptr, void *n, int n_size); 
 void set_gps_payload(Payload *payload, struct gps_fix_t data);
 int  _xbee_startup(struct xbee **xbee, struct xbee_con **con,struct  xbee_conAddress *address);
+bool enable_camera();
+bool disable_camera();
 
+int base_altitude = 0;
 //Payload variables
 #define MAX_BUF 32  // Maximum payload size 
 
 Payload payload;
+flags_t flags;
 Payload* ptr_payload = &payload;
 bool connected;
+bool transmit = false; //whether to transmit data
 
-int tx_pd = STANDBY_TX_PD; //time between message transmission, in ms
-
+// landing autodetection
+#define ALT_OFFSET_CEIL_M 5000;
+#define ALT_DELTA_THRESH_M 10;
+bool calibrate = false;
+int alt_calib = 0;
+bool landed = false;
+bool exceed_ceiling = false;
 
 //receiving callback
 void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data) {
     if ((*pkt)->dataLen > 0) {
-		if ((*pkt)->data[0] == 0xAA) {
-			xbee_conCallbackSet(con, NULL, NULL);
-			printf("*** DISABLED CALLBACK... ***\n");
-		}
-		printf("rx: [0x%02X]\n", (unsigned int)((*pkt)->data[0]));
+        byte cmd = (*pkt)->data[0];
+		if (cmd >> CD_EN_CAMERA & 1) {
+            // TODO
+            flags |= FG_CAMERA;
+        }
+        if (cmd >> CD_DS_CAMERA & 1) {
+            // TODO
+            flags &= ~FG_CAMERA;
+        }
+        if (cmd >> CD_EN_TRANS & 1) {
+            transmit = true;
+        }
+        if (cmd >> CD_DS_TRANS & 1) {
+            transmit = false;
+        }
+        if (cmd >> CD_MAX_FREQ & 1) {
+            standby_time = STANDBY_TIME_MIN_MS; 
+            flags |= FG_TRANS_FREQ; 
+        }
+        if (cmd >> CD_MIN_FREQ & 1) {
+            standby_time = STANDBY_TIME_MAX_MS;
+            flags &= ~FG_TRANS_FREQ;
+        }
+        if (cmd >> CD_EN_LAUNCH & 1) {
+            calibrate = true; 
+            flags |= FG_TRANS_FREQ;
+        }
+        if (cmd >> CD_DS_LAUNCH & 1) {
+            calibrate = false;
+            alt_calib = 0;
+            flags &= ~FG_TRANS_FREQ;
+        }
+        printf("rx: [0x%02X]\n", (unsigned int)((*pkt)->data[0]));
 	}
 	printf("tx: %d\n", xbee_conTx(con, NULL, "ACK\r\n"));
 }
@@ -49,7 +89,6 @@ int main(void) {
     
     int buf_size; //actual size of buffer
     byte* buf_start = (byte*) malloc( MAX_BUF * sizeof(byte) ); //allocate starting payload pointer
-    byte* buf_curr; //current position of buffer
     struct gps_data_t gps_data; 
     struct xbee *xbee;
     struct xbee_con *con;
@@ -115,7 +154,7 @@ int main(void) {
         memset( buf_start, 0, MAX_BUF);
 
         //buf_start is pointer to first allocated space
-        //buf_curr is pointer to next free space
+        byte* buf_curr; //current position of buffer
         buf_curr = stream(buf_start, &(ptr_payload->latitude), sizeof(payload.latitude));
         buf_curr = stream(buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
         buf_curr = stream(buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
@@ -129,7 +168,8 @@ int main(void) {
         //rpi is little endian (LSB first)
         unsigned char retVal;
         if (connected) {
-        if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
+            if (transmit)
+            if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
             if (ret == XBEE_ETX) {
                 printf("tx error (0x%02X)\n", retVal);
             } else { 
@@ -154,7 +194,7 @@ int main(void) {
             printf("loop startup\n");
             _xbee_startup(&xbee,&con,&address);
         }
-        msleep(200);
+        msleep(standby_time);
     }
 
 
@@ -222,6 +262,7 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
 }
 
 void set_gps_payload(Payload *payload, struct gps_fix_t data) {
+  payload->flags |= 
   payload->latitude = (int32_t) (data.latitude*10000);
   payload->longitude = (int32_t) (-1*data.longitude*10000);
   payload->altitude = (uint16_t) data.altitude;
