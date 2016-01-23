@@ -43,11 +43,13 @@ bool connected;
 bool transmit = false; //whether to transmit data
 
 // landing autodetection
-#define ALT_OFFSET_CEIL_M 5000; //ceiling offset from current altitude
-#define ALT_DELTA_MAX_M 10; //max fluctuation to determine landing condition 
+#define ALT_OFFSET_CEIL_M 5000 //ceiling offset from current altitude
+#define ALT_DELTA_MAX_M 10 //max fluctuation to determine landing condition 
 bool calibrate = false;
+int prev_alt = 0; //previous altitude
 int alt_calib = 0;
-bool enabled  = true;
+int mov_avg_delta = 0; //moving average of change in altitude
+bool en_auto_detect_landing  = true;
 bool exceed_ceiling = false;
 
 //receiving callback
@@ -172,6 +174,32 @@ int main(void) {
         set_imu_payload(payload, gyro, accel, bmp);
 #endif    
 
+        //calibrate - set the altitude ceiling
+        if (calibrate) {
+            alt_calib = payload.altitude + ALT_OFFSET_CEIL_M;
+            exceed_ceiling = false;
+            en_auto_detect_landing = true;
+            calibrate = false;
+        }
+        
+        //auto-detect landing is enabled
+        if (en_auto_detect_landing) {
+            //ceiling exceeded
+            if (!exceed_ceiling && payload.altitude > alt_calib) {
+                exceed_ceiling = true;
+            }
+            const int mov_avg_pd = 16;
+            mov_avg_delta = mov_avg_delta + (payload.altitude - prev_alt) - mov_avg_delta / mov_avg_pd;
+            mov_avg_delta = mov_avg_delta / mov_avg_pd;
+            
+            //altitude has stabilized
+            if (mov_avg_delta < ALT_DELTA_MAX_M) {
+                standby_time = STANDBY_TIME_MAX_MS;
+                flags |= FG_LANDED;
+                en_auto_detect_landing = false;
+            }
+            prev_alt = payload.altitude;
+        }
         //clear buffer
         memset( buf_start, 0, MAX_BUF);
 
@@ -180,7 +208,7 @@ int main(void) {
         buf_curr = stream(buf_start, &(ptr_payload->latitude), sizeof(payload.latitude));
         buf_curr = stream(buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
         buf_curr = stream(buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
-        buf_curr = stream(buf_curr,&(ptr_payload->flags), sizeof(payload.flags));
+        buf_curr = stream(buf_curr,&(flags), sizeof(payload.flags));
         buf_curr = stream(buf_curr,&(ptr_payload->gyro_z), sizeof(payload.gyro_z));
         buf_curr = stream(buf_curr,&(ptr_payload->acc_z), sizeof(payload.acc_z));
         buf_curr = stream(buf_curr,&(ptr_payload->acc_x), sizeof(payload.acc_x));
@@ -288,7 +316,6 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
     connected = true;
     return XBEE_ENONE;
 }
-
 
 void set_payload(Payload *payload, struct gps_fix_t data) {
   payload->flags |= FG_GPS_FIX; 

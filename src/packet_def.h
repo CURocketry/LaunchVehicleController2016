@@ -23,6 +23,7 @@ typedef uint8_t flags_t;
 #define FG_CAMERA        1 << 2 
 #define FG_TRANS_FREQ    1 << 3
 #define FG_LAUNCH        1 << 4
+#define FG_LANDED        1 << 5
 
 typedef struct {
   int32_t latitude;
