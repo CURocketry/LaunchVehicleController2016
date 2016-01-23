@@ -39,7 +39,7 @@ $(BUILDDIR)/$(LIBDIR)/%.o : $(LIBDIR)/%.c
 COMPLIBS = $(wildcard $(BUILDDIR)/$(LIBDIR)/*.o)
 
 $(PROG): src/$(PROG).c
-	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lm -lgps -lwiringPi -I. -Ilib $(COMPLIBS) $(CFLAGS)
+	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lgps -lwiringPi -lada10dof -I. -Ilib -I/usr/lib $(COMPLIBS) $(CFLAGS) -lm
 
 gps_conf: src/gps_conf.c
-	$(CC) $< -o $(BUILDDIR)/$@ -Ilib -lwiringPi $(COMPLIBS) $(CFLAGS)
+	$(CC) $< -o $(BUILDDIR)/$@ -Ilib  $(COMPLIBS) $(CFLAGS)

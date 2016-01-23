@@ -7,6 +7,10 @@
 #include <limits.h>
 
 #include <crt_common.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_L3GD20_U.h>
+#include <Adafruit_LSM303_U.h>
+#include <Adafruit_BMP085_U.h>
 #include <xbee.h>
 #include <gps.h>
 
@@ -38,11 +42,11 @@ bool connected;
 bool transmit = false; //whether to transmit data
 
 // landing autodetection
-#define ALT_OFFSET_CEIL_M 5000;
-#define ALT_DELTA_THRESH_M 10;
+#define ALT_OFFSET_CEIL_M 5000; //ceiling offset from current altitude
+#define ALT_DELTA_MAX_M 10; //max fluctuation to determine landing condition 
 bool calibrate = false;
 int alt_calib = 0;
-bool landed = false;
+bool enabled  = true;
 bool exceed_ceiling = false;
 
 //receiving callback
@@ -95,6 +99,18 @@ int main(void) {
     struct xbee_conAddress address;
     xbee_err ret;
     connected = false;
+    struct gyro_t *gyro;
+    struct accel_t *accel;
+    struct bmp_t *bmp;
+    gyro_create(&gyro, 0, GYRO_RANGE_2000DPS);
+    gyro_enableAutoRange(gyro, true);
+    gyro_useRadians(gyro,false);
+
+    accel_create(&accel, 1);
+    accel_useEarthGravity(accel, false);
+
+    bmp_create(&bmp, 2);
+
 #ifndef DEBUG_IGNORE_GPS
     //connect to the gps
     if ((ret = gps_open("localhost", "2947", &gps_data)) == -1) {
@@ -124,9 +140,7 @@ int main(void) {
     
     for (;;) {
 
-        payload.latitude = 0;
-        payload.longitude = 0;
-        payload.altitude = 0;
+        memset( ptr_payload, 0, sizeof(Payload));
         payload.flags &= ~FG_GPS_FIX;
        
 #ifndef DEBUG_IGNORE_GPS
@@ -168,27 +182,28 @@ int main(void) {
         //rpi is little endian (LSB first)
         unsigned char retVal;
         if (connected) {
-            if (transmit)
-            if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
-            if (ret == XBEE_ETX) {
-                printf("tx error (0x%02X)\n", retVal);
-            } else { 
-                //if (ret == XBEE_ETIMEOUT || ret == XBEE_EINUSE || ret == XBEE_EINVAL) {
-               // timeout workaround - disconnect and reconnect
-                printf("error: %s\n", xbee_errorToStr(ret));
-                printf("timeout\n");
-                xbee_conEnd(con);
-                xbee_shutdown(xbee);
-                connected = false;
-			    xbee_conCallbackSet(con, NULL, NULL);
-                //usleep(50000);
-                sleep(5);
-                _xbee_startup(&xbee,&con,&address);
+            if (transmit) {
+                if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
+                    if (ret == XBEE_ETX) {
+                        printf("tx error (0x%02X)\n", retVal);
+                    } 
+                    else if (ret == XBEE_ETIMEOUT || ret == XBEE_EINUSE || ret == XBEE_EINVAL) {
+                        // timeout workaround - disconnect and reconnect
+                        printf("error: %s\n", xbee_errorToStr(ret));
+                        printf("timeout\n");
+                        xbee_conEnd(con);
+                        xbee_shutdown(xbee);
+                        connected = false;
+                        xbee_conCallbackSet(con, NULL, NULL);
+                        //usleep(50000);
+                        sleep(5);
+                        _xbee_startup(&xbee,&con,&address);
+                    }
+                    else {
+                        printf("error: %s\n", xbee_errorToStr(ret));
+                    }
+                }
             }
-            /*else {
-                printf("error: %s\n", xbee_errorToStr(ret));
-            }*/
-        }
         }
         else {
             printf("loop startup\n");
@@ -261,14 +276,34 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
     return XBEE_ENONE;
 }
 
-void set_gps_payload(Payload *payload, struct gps_fix_t data) {
-  payload->flags |= 
+
+void set_payload(Payload *payload, struct gps_fix_t data) {
+  payload->flags |= FG_GPS_FIX; 
   payload->latitude = (int32_t) (data.latitude*10000);
   payload->longitude = (int32_t) (-1*data.longitude*10000);
-  payload->altitude = (uint16_t) data.altitude;
+  payload->altitude = (int16_t) data.altitude;
 }
 
-/*
-void set_imu_payload(Payload *payload, struct event_t event) {
 
-}*/
+void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *accel, struct bmp_t *bmp) { 
+    sensors_event_t event;
+    float *temp;
+
+    gyro_getEvent(gyro, &event);
+    payload->gyro_z = (int16_t)(event.gyro.z);
+
+    accel_getEvent(accel, &event);
+    payload->acc_x = (int8_t)event.acceleration.x;
+    payload->acc_y = (int8_t)event.acceleration.y;
+    payload->acc_z = (int8_t)event.acceleration.z;
+
+    bmp_getEvent(bmp, &event);
+    bmp_getTemperature(bmp, temp);
+    payload->temp = (uint8_t)*temp;
+    if (payload->altitude == 0 && event.pressure) {
+        //fallback: approximate altitude using average sea level pressure
+        float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
+        payload->altitude = (int16_t) bmp_pressureToAltitude(seaLevelPressure,event.pressure);
+    }
+
+}

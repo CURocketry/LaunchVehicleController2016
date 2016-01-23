@@ -7,9 +7,9 @@ void sendCommand(int handle, const char* cmd) {
     
     // write must be split up to work properly
     int r = write(handle, cmd, size);
-    write(handle, "\r\n",2);
+    r += write(handle, "\r\n",2);
     
-    if (r != size) {
+    if (r != size+2) {
         printf("ERROR: did not correctly write %s\n", cmd);
     }
     else {
