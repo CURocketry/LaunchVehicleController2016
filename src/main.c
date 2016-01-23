@@ -1,41 +1,17 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <time.h>
-#include <math.h>
-#include <limits.h>
+#include "main.h"
 
-#include <crt_common.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_L3GD20_U.h>
-#include <Adafruit_LSM303_U.h>
-#include <Adafruit_BMP085_U.h>
-#include <xbee.h>
-#include <gps.h>
+//#define DEBUG_IGNORE_GPS
+//#define DEBUG_IGNORE_IMU
 
-#include "packet_def.h"
-
-#define DEBUG_IGNORE_GPS
-#define DEBUG_IGNORE_IMU
-
-typedef unsigned char byte;
 
 #define STANDBY_TIME_MIN_MS 300 //delay between tranmissions in ms
-#define STANDBY_TIME_MAX_MS 5000 
+#define STANDBY_TIME_MAX_MS 500 
 int standby_time = STANDBY_TIME_MAX_MS;
 
-byte* stream(void* ptr, void *n, int n_size); 
-void set_gps_payload(Payload *payload, struct gps_fix_t data);
-void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *accel, struct bmp_t *bmp); 
-int  _xbee_startup(struct xbee **xbee, struct xbee_con **con,struct  xbee_conAddress *address);
-bool enable_camera();
-bool disable_camera();
-
-int base_altitude = 0;
 //Payload variables
 #define MAX_BUF 32  // Maximum payload size 
 
+byte init_status;
 Payload payload;
 flags_t flags;
 Payload* ptr_payload = &payload;
@@ -49,7 +25,7 @@ bool calibrate = false;
 int prev_alt = 0; //previous altitude
 int alt_calib = 0;
 int mov_avg_delta = 0; //moving average of change in altitude
-bool en_auto_detect_landing  = true;
+bool en_auto_detect_landing  = false;
 bool exceed_ceiling = false;
 
 //receiving callback
@@ -89,7 +65,7 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
         }
         printf("rx: [0x%02X]\n", (unsigned int)((*pkt)->data[0]));
 	}
-	printf("tx: %d\n", xbee_conTx(con, NULL, "ACK\r\n"));
+    //printf("tx: %d\n", xbee_conTx(con, NULL, "ACK\r\n"));
 }
 
 int main(void) {
@@ -105,26 +81,46 @@ int main(void) {
     struct gyro_t *gyro;
     struct accel_t *accel;
     struct bmp_t *bmp;
-   
+
 #ifndef DEBUG_IGNORE_IMU
-    gyro_create(&gyro, 0, GYRO_RANGE_2000DPS);
-    gyro_enableAutoRange(gyro, true);
-    gyro_useRadians(gyro,false);
+    if (gyro_create(&gyro, 0, GYRO_RANGE_2000DPS)) {
+        gyro_enableAutoRange(gyro, true);
+        gyro_useRadians(gyro,false);
+        printf("Initialized gyroscope.\n");
+        init_status |= (1 << INIT_GYRO);
+    } else {
+        printf("Unable to initialize gyroscope! Skipping...\n");
+    }
 
-    accel_create(&accel, 1);
-    accel_useEarthGravity(accel, false);
+    
+    if (accel_create(&accel, 1)) {
+        accel_useEarthGravity(accel, false);
+        printf("Initialized accelerometer.\n");
+        init_status |= (1 << INIT_ACCEL);
+    } else {
+        printf("Unable to initialize accelerometer! Skipping...\n");
+    }
 
-    bmp_create(&bmp, 2);
+    if (bmp_create(&bmp, 2)) {
+        printf("Initialized barometer.\n");
+        init_status |= (1 << INIT_BMP);
+    } else {
+        printf("Unable to initialize barometer! Skipping...\n");
+    }
+
 #endif
 
 #ifndef DEBUG_IGNORE_GPS
     //connect to the gps
     if ((ret = gps_open("localhost", "2947", &gps_data)) == -1) {
+        printf("Unable to connect to GPS! Skipping...\n");
         printf("code: %d, reason: %s\n", ret, gps_errstr(ret));
-        return EXIT_FAILURE;
+    } else {
+        gps_stream(&gps_data, WATCH_ENABLE | WATCH_JSON, NULL);
+        printf("Successfully connected to GPSD daemon.\n");
+        init_status |= (1 << INIT_GPS);
     }
 
-    gps_stream(&gps_data, WATCH_ENABLE | WATCH_JSON, NULL);
 #endif
    
    
@@ -150,28 +146,30 @@ int main(void) {
         payload.flags &= ~FG_GPS_FIX;
        
 #ifndef DEBUG_IGNORE_GPS
-        // wait for 200ms to receive data 
-        if (gps_waiting (&gps_data, 200000)) {
-            /* read data */
-            if ((ret = gps_read(&gps_data)) == -1) {
-                printf("error occured reading gps data. code: %d, reason: %s\n", ret, gps_errstr(ret));
-            } else {
-                /* Display data from the GPS receiver. */
-                if ((gps_data.status == STATUS_FIX) && 
-                    (gps_data.fix.mode == MODE_2D || gps_data.fix.mode == MODE_3D) &&
-                    !isnan(gps_data.fix.latitude) && 
-                    !isnan(gps_data.fix.longitude)) {
-                        printf("latitude: %f, longitude: %f, speed: %f, altitude: %f\n", gps_data.fix.latitude, gps_data.fix.longitude, gps_data.fix.speed, gps_data.fix.altitude);
-                        set_gps_payload(&payload, gps_data.fix);
+        if ( init_status >> INIT_GPS & 1) {
+            // wait for 200ms to receive data 
+            if (gps_waiting (&gps_data, 200000)) {
+                /* read data */
+                if ((ret = gps_read(&gps_data)) == -1) {
+                    printf("error occured reading gps data. code: %d, reason: %s\n", ret, gps_errstr(ret));
                 } else {
-                    printf("no GPS data available\n");
+                    /* Display data from the GPS receiver. */
+                    if ((gps_data.status == STATUS_FIX) && 
+                        (gps_data.fix.mode == MODE_2D || gps_data.fix.mode == MODE_3D) &&
+                        !isnan(gps_data.fix.latitude) && 
+                        !isnan(gps_data.fix.longitude)) {
+                            printf("latitude: %f, longitude: %f, speed: %f, altitude: %f\n", gps_data.fix.latitude, gps_data.fix.longitude, gps_data.fix.speed, gps_data.fix.altitude);
+                            set_gps_payload(&payload, gps_data.fix);
+                    } else {
+                        printf("no GPS data available.\n");
+                    }
                 }
             }
         }
 #endif
 
 #ifndef DEBUG_IGNORE_IMU
-        set_imu_payload(payload, gyro, accel, bmp);
+        set_imu_payload(&payload, gyro, accel, bmp);
 #endif    
 
         //calibrate - set the altitude ceiling
@@ -317,7 +315,7 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
     return XBEE_ENONE;
 }
 
-void set_payload(Payload *payload, struct gps_fix_t data) {
+void set_gps_payload(Payload *payload, struct gps_fix_t data) {
   payload->flags |= FG_GPS_FIX; 
   payload->latitude = (int32_t) (data.latitude*10000);
   payload->longitude = (int32_t) (-1*data.longitude*10000);
@@ -329,21 +327,27 @@ void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *acce
     sensors_event_t event;
     float temp;
 
-    gyro_getEvent(gyro, &event);
-    payload->gyro_z = (int16_t)(event.gyro.z);
+    if (init_status >> INIT_GYRO & 1) {
+        gyro_getEvent(gyro, &event);
+        payload->gyro_z = (int16_t)(event.gyro.z);
+    }
 
-    accel_getEvent(accel, &event);
-    payload->acc_x = (int8_t)event.acceleration.x;
-    payload->acc_y = (int8_t)event.acceleration.y;
-    payload->acc_z = (int8_t)event.acceleration.z;
+    if (init_status >> INIT_ACCEL & 1) {
+        accel_getEvent(accel, &event);
+        payload->acc_x = (int8_t)event.acceleration.x;
+        payload->acc_y = (int8_t)event.acceleration.y;
+        payload->acc_z = (int8_t)event.acceleration.z;
+    }
 
-    bmp_getEvent(bmp, &event);
-    bmp_getTemperature(bmp, &temp);
-    payload->temp = temp;
-    if (payload->altitude == 0 && event.pressure) {
-        //fallback: approximate altitude using average sea level pressure
-        float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
-        payload->altitude = (int16_t) bmp_pressureToAltitude(seaLevelPressure,event.pressure);
+    if (init_status >> INIT_BMP & 1) {
+        bmp_getEvent(bmp, &event);
+        bmp_getTemperature(bmp, &temp);
+        payload->temp = bmp_celsiusToFahrenheit(temp);
+        if (payload->altitude == 0 && event.pressure) {
+            //fallback: approximate altitude using average sea level pressure
+            float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
+            payload->altitude = (int16_t) bmp_pressureToAltitude(seaLevelPressure,event.pressure);
+        }
     }
 
 }
