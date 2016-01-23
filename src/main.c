@@ -27,6 +27,7 @@ int standby_time = STANDBY_TIME_MAX_MS;
 
 byte* stream(void* ptr, void *n, int n_size); 
 void set_gps_payload(Payload *payload, struct gps_fix_t data);
+void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *accel, struct bmp_t *bmp); 
 int  _xbee_startup(struct xbee **xbee, struct xbee_con **con,struct  xbee_conAddress *address);
 bool enable_camera();
 bool disable_camera();
@@ -102,6 +103,8 @@ int main(void) {
     struct gyro_t *gyro;
     struct accel_t *accel;
     struct bmp_t *bmp;
+   
+#ifndef DEBUG_IGNORE_IMU
     gyro_create(&gyro, 0, GYRO_RANGE_2000DPS);
     gyro_enableAutoRange(gyro, true);
     gyro_useRadians(gyro,false);
@@ -110,6 +113,7 @@ int main(void) {
     accel_useEarthGravity(accel, false);
 
     bmp_create(&bmp, 2);
+#endif
 
 #ifndef DEBUG_IGNORE_GPS
     //connect to the gps
@@ -164,6 +168,10 @@ int main(void) {
         }
 #endif
 
+#ifndef DEBUG_IGNORE_IMU
+        set_imu_payload(payload, gyro, accel, bmp);
+#endif    
+
         //clear buffer
         memset( buf_start, 0, MAX_BUF);
 
@@ -173,6 +181,11 @@ int main(void) {
         buf_curr = stream(buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
         buf_curr = stream(buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
         buf_curr = stream(buf_curr,&(ptr_payload->flags), sizeof(payload.flags));
+        buf_curr = stream(buf_curr,&(ptr_payload->gyro_z), sizeof(payload.gyro_z));
+        buf_curr = stream(buf_curr,&(ptr_payload->acc_z), sizeof(payload.acc_z));
+        buf_curr = stream(buf_curr,&(ptr_payload->acc_x), sizeof(payload.acc_x));
+        buf_curr = stream(buf_curr,&(ptr_payload->acc_y), sizeof(payload.acc_y));
+        buf_curr = stream(buf_curr,&(ptr_payload->temp), sizeof(payload.temp));
 
         //buffer size is the difference between the current and start pointers
         buf_size = buf_curr - buf_start;
@@ -287,7 +300,7 @@ void set_payload(Payload *payload, struct gps_fix_t data) {
 
 void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *accel, struct bmp_t *bmp) { 
     sensors_event_t event;
-    float *temp;
+    float temp;
 
     gyro_getEvent(gyro, &event);
     payload->gyro_z = (int16_t)(event.gyro.z);
@@ -298,8 +311,8 @@ void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *acce
     payload->acc_z = (int8_t)event.acceleration.z;
 
     bmp_getEvent(bmp, &event);
-    bmp_getTemperature(bmp, temp);
-    payload->temp = (uint8_t)*temp;
+    bmp_getTemperature(bmp, &temp);
+    payload->temp = temp;
     if (payload->altitude == 0 && event.pressure) {
         //fallback: approximate altitude using average sea level pressure
         float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
