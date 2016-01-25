@@ -3,9 +3,12 @@
 //#define DEBUG_IGNORE_GPS
 //#define DEBUG_IGNORE_IMU
 
+int zl_conf;
+zlog_category_t *zl_prog;
+zlog_category_t *zl_data;
 
 #define STANDBY_TIME_MIN_MS 300 //delay between tranmissions in ms
-#define STANDBY_TIME_MAX_MS 500 
+#define STANDBY_TIME_MAX_MS 5000 
 int standby_time = STANDBY_TIME_MAX_MS;
 
 //Payload variables
@@ -16,7 +19,7 @@ Payload payload;
 flags_t flags;
 Payload* ptr_payload = &payload;
 bool connected;
-bool transmit = false; //whether to transmit data
+bool transmit = true; //whether to transmit data
 
 // landing autodetection
 #define ALT_OFFSET_CEIL_M 5000 //ceiling offset from current altitude
@@ -68,8 +71,7 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
     //printf("tx: %d\n", xbee_conTx(con, NULL, "ACK\r\n"));
 }
 
-int main(void) {
-    
+int main(void) { 
     int buf_size; //actual size of buffer
     byte* buf_start = (byte*) malloc( MAX_BUF * sizeof(byte) ); //allocate starting payload pointer
     struct gps_data_t gps_data; 
@@ -82,10 +84,28 @@ int main(void) {
     struct accel_t *accel;
     struct bmp_t *bmp;
 
+    // Init logger
+    zl_conf = zlog_init("zlog.conf");
+    if (zl_conf) {
+        printf("Could not find zlog conf!\n");
+        return -2;
+    }
+    zl_data = zlog_get_category("data");
+    zl_prog = zlog_get_category("prog");
+    if (!zl_data || !zl_prog) {
+        printf("Error getting zlog categories!\n");
+        zlog_fini();
+        return -2;
+    }
+    else {
+        printf("zlog initialized\n");
+        zlog_info(zl_prog, "Controller initialized.");
+    }
 #ifndef DEBUG_IGNORE_IMU
     if (gyro_create(&gyro, 0, GYRO_RANGE_2000DPS)) {
         gyro_enableAutoRange(gyro, true);
         gyro_useRadians(gyro,false);
+        zlog_info(zl_prog, "Initialized gyroscope.");
         printf("Initialized gyroscope.\n");
         init_status |= (1 << INIT_GYRO);
     } else {
@@ -259,8 +279,10 @@ int main(void) {
 
 
 #ifndef DEBUG_IGNORE_GPS
-    gps_stream(&gps_data, WATCH_DISABLE, NULL);
-    gps_close (&gps_data);
+    if (init_status >> INIT_GPS & 1) {
+        gps_stream(&gps_data, WATCH_DISABLE, NULL);
+        gps_close (&gps_data);
+    }
 #endif
 	
     xbee_shutdown(xbee);
@@ -334,9 +356,9 @@ void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *acce
 
     if (init_status >> INIT_ACCEL & 1) {
         accel_getEvent(accel, &event);
-        payload->acc_x = (int8_t)event.acceleration.x;
-        payload->acc_y = (int8_t)event.acceleration.y;
-        payload->acc_z = (int8_t)event.acceleration.z;
+        payload->acc_x = (int16_t)(event.acceleration.x*100);
+        payload->acc_y = (int16_t)(event.acceleration.y*100);
+        payload->acc_z = (int16_t)(event.acceleration.z*100);
     }
 
     if (init_status >> INIT_BMP & 1) {

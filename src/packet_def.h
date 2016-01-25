@@ -24,16 +24,16 @@ typedef uint8_t flags_t;
 #define FG_TRANS_FREQ    1 << 3
 #define FG_LAUNCH        1 << 4
 #define FG_LANDED        1 << 5
-
+ 
 typedef struct {
   int32_t latitude;
   int32_t longitude;
   int16_t altitude;
   flags_t flags;
   int16_t gyro_z;
-  int8_t acc_z;
-  int8_t acc_x;
-  int8_t acc_y;
+  int16_t acc_z;
+  int16_t acc_x;
+  int16_t acc_y;
   uint8_t temp;
 } Payload;
 

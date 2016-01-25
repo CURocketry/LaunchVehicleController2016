@@ -12,6 +12,7 @@
 #include <Adafruit_BMP085_U.h>
 #include <xbee.h>
 #include <gps.h>
+#include <zlog.h>
 
 #include "packet_def.h"
 
