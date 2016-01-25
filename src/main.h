@@ -18,7 +18,9 @@
 
 typedef unsigned char byte;
 
+
 //initialization status flags
+typedef uint8_t init_ok_t;
 #define INIT_GPS 0
 #define INIT_GYRO 1
 #define INIT_ACCEL 2

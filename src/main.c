@@ -14,7 +14,7 @@ int standby_time = STANDBY_TIME_MAX_MS;
 //Payload variables
 #define MAX_BUF 32  // Maximum payload size 
 
-byte init_status;
+init_ok_t init_status;
 Payload payload;
 flags_t flags;
 Payload* ptr_payload = &payload;
@@ -34,41 +34,49 @@ bool exceed_ceiling = false;
 //receiving callback
 void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data) {
     if ((*pkt)->dataLen > 0) {
-        byte cmd = (*pkt)->data[0];
-		if (cmd >> CD_EN_CAMERA & 1) {
+        byte cmd = (*pkt)->data[0];	
+        zlog_debug(zl_prog,"rx: [0x%02X]", (unsigned int)(cmd));
+        
+        if (cmd >> CD_EN_CAMERA & 1) {
             // TODO
             flags |= FG_CAMERA;
+            zlog_debug(zl_prog,"CMD: Enable camera.");
         }
         if (cmd >> CD_DS_CAMERA & 1) {
             // TODO
             flags &= ~FG_CAMERA;
+            zlog_debug(zl_prog,"CMD: Disable camera.");
         }
         if (cmd >> CD_EN_TRANS & 1) {
             transmit = true;
+            zlog_debug(zl_prog,"CMD: Enable transmission.");
         }
         if (cmd >> CD_DS_TRANS & 1) {
             transmit = false;
+            zlog_debug(zl_prog,"CMD: Disable transmission.");
         }
         if (cmd >> CD_MAX_FREQ & 1) {
             standby_time = STANDBY_TIME_MIN_MS; 
             flags |= FG_TRANS_FREQ; 
+            zlog_debug(zl_prog,"CMD: Max frequency.");
         }
         if (cmd >> CD_MIN_FREQ & 1) {
             standby_time = STANDBY_TIME_MAX_MS;
             flags &= ~FG_TRANS_FREQ;
+            zlog_debug(zl_prog,"CMD: Min frequency.");
         }
         if (cmd >> CD_EN_LAUNCH & 1) {
             calibrate = true; 
-            flags |= FG_TRANS_FREQ;
+            flags |= FG_LAUNCH;
+            zlog_debug(zl_prog,"CMD: Enable launch.");
         }
         if (cmd >> CD_DS_LAUNCH & 1) {
             calibrate = false;
             alt_calib = 0;
-            flags &= ~FG_TRANS_FREQ;
+            flags &= ~FG_LAUNCH;
+            zlog_debug(zl_prog,"CMD: Disable launch.");
         }
-        printf("rx: [0x%02X]\n", (unsigned int)((*pkt)->data[0]));
 	}
-    //printf("tx: %d\n", xbee_conTx(con, NULL, "ACK\r\n"));
 }
 
 int main(void) { 
@@ -87,9 +95,14 @@ int main(void) {
     // Init logger
     zl_conf = zlog_init("zlog.conf");
     if (zl_conf) {
-        printf("Could not find zlog conf!\n");
-        return -2;
+        //try the installation location
+        zl_conf = zlog_init("/var/lib/crtlvc/zlog.conf");
+        if (zl_conf) {
+            printf("Could not find zlog conf!\n");
+            return -2;
+        }
     }
+
     zl_data = zlog_get_category("data");
     zl_prog = zlog_get_category("prog");
     if (!zl_data || !zl_prog) {
@@ -99,33 +112,33 @@ int main(void) {
     }
     else {
         printf("zlog initialized\n");
-        zlog_info(zl_prog, "Controller initialized.");
+        zlog_info(zl_prog, "### CRTLVC initialized. ###");
+        zlog_info(zl_data, "### Started new data logging session ###");
     }
 #ifndef DEBUG_IGNORE_IMU
     if (gyro_create(&gyro, 0, GYRO_RANGE_2000DPS)) {
         gyro_enableAutoRange(gyro, true);
         gyro_useRadians(gyro,false);
-        zlog_info(zl_prog, "Initialized gyroscope.");
-        printf("Initialized gyroscope.\n");
+        zlog_info(zl_prog, "Gyroscope initialized.");
         init_status |= (1 << INIT_GYRO);
     } else {
-        printf("Unable to initialize gyroscope! Skipping...\n");
+        zlog_error(zl_prog, "Unable to initialize gyroscope! Skipping...");
     }
 
     
     if (accel_create(&accel, 1)) {
         accel_useEarthGravity(accel, false);
-        printf("Initialized accelerometer.\n");
+        zlog_info(zl_prog, "Accelerometer initialized.");
         init_status |= (1 << INIT_ACCEL);
     } else {
-        printf("Unable to initialize accelerometer! Skipping...\n");
+        zlog_error(zl_prog,"Unable to initialize accelerometer! Skipping...");
     }
 
     if (bmp_create(&bmp, 2)) {
-        printf("Initialized barometer.\n");
+        zlog_info(zl_prog, "Barometer initialized.");
         init_status |= (1 << INIT_BMP);
     } else {
-        printf("Unable to initialize barometer! Skipping...\n");
+        zlog_error(zl_prog,"Unable to initialize barometer! Skipping..."); 
     }
 
 #endif
@@ -133,11 +146,11 @@ int main(void) {
 #ifndef DEBUG_IGNORE_GPS
     //connect to the gps
     if ((ret = gps_open("localhost", "2947", &gps_data)) == -1) {
-        printf("Unable to connect to GPS! Skipping...\n");
-        printf("code: %d, reason: %s\n", ret, gps_errstr(ret));
+        zlog_error(zl_prog, "Unable to connect to GPS! Skipping...");
+        zlog_error(zl_prog, "code: %d, reason: %s\n", ret, gps_errstr(ret)); 
     } else {
         gps_stream(&gps_data, WATCH_ENABLE | WATCH_JSON, NULL);
-        printf("Successfully connected to GPSD daemon.\n");
+        zlog_info(zl_prog, "Successfully connected to GPSD daemon.");
         init_status |= (1 << INIT_GPS);
     }
 
@@ -159,19 +172,24 @@ int main(void) {
     if ((ret = _xbee_startup(&xbee, &con, &address)) != XBEE_ENONE) {
         return ret;
     }
-    
+  
     for (;;) {
 
         memset( ptr_payload, 0, sizeof(Payload));
         payload.flags &= ~FG_GPS_FIX;
-       
+        //set the init status flag
+        if ((init_status >> INIT_GPS) & (init_status >> INIT_GYRO)
+            & (init_status >> INIT_ACCEL) & (init_status >> INIT_BMP) & 1){
+            payload.flags |= FG_INIT_OK; 
+        }
+
 #ifndef DEBUG_IGNORE_GPS
         if ( init_status >> INIT_GPS & 1) {
             // wait for 200ms to receive data 
             if (gps_waiting (&gps_data, 200000)) {
                 /* read data */
                 if ((ret = gps_read(&gps_data)) == -1) {
-                    printf("error occured reading gps data. code: %d, reason: %s\n", ret, gps_errstr(ret));
+                    zlog_warn(zl_prog,"error occured reading gps data. code: %d, reason: %s\n", ret, gps_errstr(ret));
                 } else {
                     /* Display data from the GPS receiver. */
                     if ((gps_data.status == STATUS_FIX) && 
@@ -181,7 +199,7 @@ int main(void) {
                             printf("latitude: %f, longitude: %f, speed: %f, altitude: %f\n", gps_data.fix.latitude, gps_data.fix.longitude, gps_data.fix.speed, gps_data.fix.altitude);
                             set_gps_payload(&payload, gps_data.fix);
                     } else {
-                        printf("no GPS data available.\n");
+                        zlog_debug(zl_prog,"no GPS data available.\n");
                     }
                 }
             }
@@ -191,6 +209,11 @@ int main(void) {
 #ifndef DEBUG_IGNORE_IMU
         set_imu_payload(&payload, gyro, accel, bmp);
 #endif    
+
+        //log flight data
+        zlog_info(zl_data,"%i,%i,%i,%i,%i,%i,%i,%i,%i,%i",payload.latitude,payload.longitude,
+                payload.altitude,payload.gyro_x,payload.gyro_y,payload.gyro_z,payload.acc_x,
+                payload.acc_y,payload.acc_z,payload.temp);
 
         //calibrate - set the altitude ceiling
         if (calibrate) {
@@ -244,12 +267,11 @@ int main(void) {
             if (transmit) {
                 if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
                     if (ret == XBEE_ETX) {
-                        printf("tx error (0x%02X)\n", retVal);
+                        zlog_error(zl_prog, "xbee tx error: 0x%02X",retVal);
                     } 
                     else if (ret == XBEE_ETIMEOUT || ret == XBEE_EINUSE || ret == XBEE_EINVAL) {
                         // timeout workaround - disconnect and reconnect
-                        printf("error: %s\n", xbee_errorToStr(ret));
-                        printf("timeout\n");
+                        zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
                         xbee_conEnd(con);
                         xbee_shutdown(xbee);
                         connected = false;
@@ -259,13 +281,12 @@ int main(void) {
                         _xbee_startup(&xbee,&con,&address);
                     }
                     else {
-                        printf("error: %s\n", xbee_errorToStr(ret));
+                        zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
                     }
                 }
             }
         }
         else {
-            printf("loop startup\n");
             _xbee_startup(&xbee,&con,&address);
         }
         msleep(standby_time);
@@ -286,7 +307,7 @@ int main(void) {
 #endif
 	
     xbee_shutdown(xbee);
-
+    zlog_fini();
 	return 0;
 }
 
@@ -305,10 +326,10 @@ byte* stream(void* ptr, void *n, int n_size) {
 int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAddress *address) {
     xbee_err ret;
     struct xbee_conSettings conset;
-    printf("Start setup\n");
+    zlog_debug(zl_prog, "xbee start setup");
     // connect to the xbee
     if ((ret = xbee_setup(xbee, "xbee3", "/dev/xbee", 57600)) != XBEE_ENONE) {
-        printf("ret: %d (%s)\n", ret, xbee_errorToStr(ret));
+        zlog_debug(zl_prog, "ret: %d (%s)", ret, xbee_errorToStr(ret));
 		return ret;
     }
 	
@@ -332,7 +353,7 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
 		xbee_log(*xbee, -1, "xbee_conCallbackSet() returned: %d", ret);
 		return ret;
 	}
-    printf("setup done\n");
+    zlog_debug(zl_prog, "xbee setup done\n");
     connected = true;
     return XBEE_ENONE;
 }
@@ -351,6 +372,8 @@ void set_imu_payload(Payload *payload, struct gyro_t *gyro, struct accel_t *acce
 
     if (init_status >> INIT_GYRO & 1) {
         gyro_getEvent(gyro, &event);
+        payload->gyro_x = (int16_t)(event.gyro.x);
+        payload->gyro_y = (int16_t)(event.gyro.y);
         payload->gyro_z = (int16_t)(event.gyro.z);
     }
 

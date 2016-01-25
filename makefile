@@ -25,6 +25,7 @@ install:
 	cp $(BINARYNAME)_initd /etc/init.d/$(BINARYNAME)
 	update-rc.d $(BINARYNAME) defaults
 	mkdir -p $(APPFILEDIR)
+	cp ./zlog.conf $(APPFILEDIR)
 
 uninstall:
 	rm /usr/bin/$(BINARYNAME) 
@@ -42,7 +43,9 @@ $(BUILDDIR)/$(LIBDIR)/%.o : $(LIBDIR)/%.c
 COMPLIBS = $(wildcard $(BUILDDIR)/$(LIBDIR)/*.o)
 
 $(PROG): src/$(PROG).c
-	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lgps -lwiringPi -lada10dof -lzlog -I. -Ilib -I/usr/lib $(COMPLIBS) $(CFLAGS) -lm
+	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lgps \
+		-lwiringPi -lada10dof -lzlog \
+		-I. -Ilib -I/usr/lib $(COMPLIBS) $(CFLAGS) -lm
 	cp ./zlog.conf build
 
 gps_conf: src/gps_conf.c

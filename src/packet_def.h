@@ -6,7 +6,6 @@
 
 // commands
 typedef uint8_t commands_t;
-
 #define CD_EN_CAMERA    0
 #define CD_DS_CAMERA    1
 #define CD_EN_TRANS     2
@@ -18,8 +17,8 @@ typedef uint8_t commands_t;
 
 //flags
 typedef uint8_t flags_t;
-#define FG_TEST          1
-#define FG_GPS_FIX       1 << 1
+#define FG_INIT_OK       1
+#define FG_GPS_FIX       1 << 1 
 #define FG_CAMERA        1 << 2 
 #define FG_TRANS_FREQ    1 << 3
 #define FG_LAUNCH        1 << 4
@@ -30,6 +29,8 @@ typedef struct {
   int32_t longitude;
   int16_t altitude;
   flags_t flags;
+  int16_t gyro_x;
+  int16_t gyro_y;
   int16_t gyro_z;
   int16_t acc_z;
   int16_t acc_x;
