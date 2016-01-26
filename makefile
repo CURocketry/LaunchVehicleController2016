@@ -26,12 +26,14 @@ install:
 	update-rc.d $(BINARYNAME) defaults
 	mkdir -p $(APPFILEDIR)
 	cp ./zlog.conf $(APPFILEDIR)
+	cp ./camera.py $(APPFILEDIR)
+	mkdir -p /var/log/$(BINARYNAME)
 
 uninstall:
-	rm /usr/bin/$(BINARYNAME) 
-	rm /etc/init.d/$(BINARYNAME)
+	-rm /usr/bin/$(BINARYNAME) 
+	-rm /etc/init.d/$(BINARYNAME)
 	update-rc.d $(BINARYNAME) remove
-	rm -rf $(APPFILEDIR)
+	-rm -rf $(APPFILEDIR)
 
 #build everything in the lib directory
 lib: $(addprefix $(BUILDDIR)/, $(patsubst %.c,%.o,$(wildcard $(LIBDIR)/*.c))) 
@@ -44,9 +46,10 @@ COMPLIBS = $(wildcard $(BUILDDIR)/$(LIBDIR)/*.o)
 
 $(PROG): src/$(PROG).c
 	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lgps \
-		-lwiringPi -lada10dof -lzlog \
-		-I. -Ilib -I/usr/lib $(COMPLIBS) $(CFLAGS) -lm
-	cp ./zlog.conf build
+		-lwiringPi -lada10dof -lzlog -lpython2.7\
+		-I. -Ilib -I/usr/lib -Iusr/include/python2.7 $(COMPLIBS) $(CFLAGS) -lm
+	cp ./zlog.conf $(BUILDDIR)
+	cp ./camera.py $(BUILDDIR)
 
 gps_conf: src/gps_conf.c
 	$(CC) $< -o $(BUILDDIR)/$@ -Ilib  $(COMPLIBS) $(CFLAGS)

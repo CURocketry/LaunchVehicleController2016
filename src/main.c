@@ -21,6 +21,12 @@ Payload* ptr_payload = &payload;
 bool connected;
 bool transmit = true; //whether to transmit data
 
+//camera stuff
+pid_t cam_pid;
+bool cam_started;
+FILE* cam_f;
+char *cam_fpath;
+
 // landing autodetection
 #define ALT_OFFSET_CEIL_M 5000 //ceiling offset from current altitude
 #define ALT_DELTA_MAX_M 10 //max fluctuation to determine landing condition 
@@ -38,12 +44,27 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
         zlog_debug(zl_prog,"rx: [0x%02X]", (unsigned int)(cmd));
         
         if (cmd >> CD_EN_CAMERA & 1) {
-            // TODO
-            flags |= FG_CAMERA;
             zlog_debug(zl_prog,"CMD: Enable camera.");
+            if (!cam_started) {
+                cam_pid = fork();
+                //child process      
+                if (cam_pid == 0) {        
+                    zlog_debug(zl_prog,"Child process running camera script");
+                    Py_Initialize();
+                    PyRun_SimpleFile(cam_f, cam_fpath);
+                    Py_Finalize();
+                    zlog_debug(zl_prog,"Child process done.");
+                    //todo kill when done
+                }
+                cam_started = true;
+            }
+            else {
+                zlog_debug(zl_prog,"Camera already started");
+            }
+            flags |= FG_CAMERA;
         }
         if (cmd >> CD_DS_CAMERA & 1) {
-            // TODO
+            kill(cam_pid, SIGKILL);
             flags &= ~FG_CAMERA;
             zlog_debug(zl_prog,"CMD: Disable camera.");
         }
@@ -91,6 +112,22 @@ int main(void) {
     struct gyro_t *gyro;
     struct accel_t *accel;
     struct bmp_t *bmp;
+
+    //initialize the camera stuff
+    cam_fpath = malloc(35);
+    cam_fpath = "camera.py";
+    if ((cam_f = fopen(cam_fpath,"r")) == NULL) {
+        cam_fpath = "/var/lib/crtlvc/camera.py";
+        if ((cam_f = fopen(cam_fpath,"r")) == NULL) {
+            zlog_error(zl_prog,"Could not find camera script!");
+            printf("script not found");
+        }
+    }
+
+    if (cam_f != NULL) {
+        zlog_info("Camera script located.");
+        init_status |= (1 << INIT_CAMERA);
+    }
 
     // Init logger
     zl_conf = zlog_init("zlog.conf");
@@ -150,7 +187,7 @@ int main(void) {
         zlog_error(zl_prog, "code: %d, reason: %s\n", ret, gps_errstr(ret)); 
     } else {
         gps_stream(&gps_data, WATCH_ENABLE | WATCH_JSON, NULL);
-        zlog_info(zl_prog, "Successfully connected to GPSD daemon.");
+        zlog_info(zl_prog, "GPSD daemon successfully connected.");
         init_status |= (1 << INIT_GPS);
     }
 
@@ -179,7 +216,8 @@ int main(void) {
         payload.flags &= ~FG_GPS_FIX;
         //set the init status flag
         if ((init_status >> INIT_GPS) & (init_status >> INIT_GYRO)
-            & (init_status >> INIT_ACCEL) & (init_status >> INIT_BMP) & 1){
+            & (init_status >> INIT_ACCEL) & (init_status >> INIT_BMP) 
+            & (init_status >> INIT_CAMERA) & 1){
             payload.flags |= FG_INIT_OK; 
         }
 
@@ -289,7 +327,14 @@ int main(void) {
         else {
             _xbee_startup(&xbee,&con,&address);
         }
+
+        //don't loop if child
+        if (cam_pid == 0) {
+            for(;;){}
+        }
+
         msleep(standby_time);
+        
     }
 
 
@@ -329,7 +374,7 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
     zlog_debug(zl_prog, "xbee start setup");
     // connect to the xbee
     if ((ret = xbee_setup(xbee, "xbee3", "/dev/xbee", 57600)) != XBEE_ENONE) {
-        zlog_debug(zl_prog, "ret: %d (%s)", ret, xbee_errorToStr(ret));
+        zlog_error(zl_prog, "ret: %d (%s)", ret, xbee_errorToStr(ret));
 		return ret;
     }
 	

@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
 #include <unistd.h>
+#include <signal.h>
 #include <string.h>
 #include <math.h>
 #include <limits.h>
 
+#include <python2.7/Python.h>
 #include <crt_common.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_L3GD20_U.h>
@@ -25,7 +28,7 @@ typedef uint8_t init_ok_t;
 #define INIT_GYRO 1
 #define INIT_ACCEL 2
 #define INIT_BMP 3
-
+#define INIT_CAMERA 4
 //state status flags
 
 // function prototypes
