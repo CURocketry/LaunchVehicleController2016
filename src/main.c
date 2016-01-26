@@ -22,7 +22,7 @@ bool connected;
 bool transmit = true; //whether to transmit data
 
 //camera stuff
-pid_t cam_pid;
+pid_t cam_pid = -1;
 bool cam_started;
 FILE* cam_f;
 char *cam_fpath;
@@ -64,9 +64,10 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
             flags |= FG_CAMERA;
         }
         if (cmd >> CD_DS_CAMERA & 1) {
-            kill(cam_pid, SIGKILL);
+            cam_started = false;
+            int res = kill(cam_pid, SIGKILL);
+            zlog_info(zl_prog, "Kill child process with result %i",res);
             flags &= ~FG_CAMERA;
-            zlog_debug(zl_prog,"CMD: Disable camera.");
         }
         if (cmd >> CD_EN_TRANS & 1) {
             transmit = true;
@@ -93,6 +94,11 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
         }
         if (cmd >> CD_DS_LAUNCH & 1) {
             calibrate = false;
+            prev_alt = 0; //previous altitude
+            alt_calib = 0;
+            mov_avg_delta = 0; //moving average of change in altitude
+            en_auto_detect_landing  = false;
+            exceed_ceiling = false;
             alt_calib = 0;
             flags &= ~FG_LAUNCH;
             zlog_debug(zl_prog,"CMD: Disable launch.");
@@ -112,22 +118,6 @@ int main(void) {
     struct gyro_t *gyro;
     struct accel_t *accel;
     struct bmp_t *bmp;
-
-    //initialize the camera stuff
-    cam_fpath = malloc(35);
-    cam_fpath = "camera.py";
-    if ((cam_f = fopen(cam_fpath,"r")) == NULL) {
-        cam_fpath = "/var/lib/crtlvc/camera.py";
-        if ((cam_f = fopen(cam_fpath,"r")) == NULL) {
-            zlog_error(zl_prog,"Could not find camera script!");
-            printf("script not found");
-        }
-    }
-
-    if (cam_f != NULL) {
-        zlog_info("Camera script located.");
-        init_status |= (1 << INIT_CAMERA);
-    }
 
     // Init logger
     zl_conf = zlog_init("zlog.conf");
@@ -152,6 +142,23 @@ int main(void) {
         zlog_info(zl_prog, "### CRTLVC initialized. ###");
         zlog_info(zl_data, "### Started new data logging session ###");
     }
+    
+    //initialize the camera stuff
+    cam_fpath = malloc(35);
+    cam_fpath = "camera.py";
+    if ((cam_f = fopen(cam_fpath,"r")) == NULL) {
+        cam_fpath = "/var/lib/crtlvc/camera.py";
+        if ((cam_f = fopen(cam_fpath,"r")) == NULL) {
+            zlog_error(zl_prog,"Could not find camera script!");
+            printf("script not found");
+        }
+    }
+
+    if (cam_f != NULL) {
+        zlog_info(zl_prog,"Camera script located.");
+        init_status |= (1 << INIT_CAMERA);
+    }
+
 #ifndef DEBUG_IGNORE_IMU
     if (gyro_create(&gyro, 0, GYRO_RANGE_2000DPS)) {
         gyro_enableAutoRange(gyro, true);
@@ -218,7 +225,7 @@ int main(void) {
         if ((init_status >> INIT_GPS) & (init_status >> INIT_GYRO)
             & (init_status >> INIT_ACCEL) & (init_status >> INIT_BMP) 
             & (init_status >> INIT_CAMERA) & 1){
-            payload.flags |= FG_INIT_OK; 
+            flags |= FG_INIT_OK; 
         }
 
 #ifndef DEBUG_IGNORE_GPS
@@ -256,6 +263,7 @@ int main(void) {
         //calibrate - set the altitude ceiling
         if (calibrate) {
             alt_calib = payload.altitude + ALT_OFFSET_CEIL_M;
+            zlog_debug(zl_prog,"Calibrating altitude: New ceiling %i",alt_calib);
             exceed_ceiling = false;
             en_auto_detect_landing = true;
             calibrate = false;
@@ -267,17 +275,19 @@ int main(void) {
             if (!exceed_ceiling && payload.altitude > alt_calib) {
                 exceed_ceiling = true;
             }
-            const int mov_avg_pd = 16;
-            mov_avg_delta = mov_avg_delta + (payload.altitude - prev_alt) - mov_avg_delta / mov_avg_pd;
-            mov_avg_delta = mov_avg_delta / mov_avg_pd;
-            
-            //altitude has stabilized
-            if (mov_avg_delta < ALT_DELTA_MAX_M) {
-                standby_time = STANDBY_TIME_MAX_MS;
-                flags |= FG_LANDED;
-                en_auto_detect_landing = false;
+            if (exceed_ceiling) {
+                const int mov_avg_pd = 16;
+                mov_avg_delta = mov_avg_delta + (payload.altitude - prev_alt) - mov_avg_delta / mov_avg_pd;
+                mov_avg_delta = mov_avg_delta / mov_avg_pd;
+                
+                //altitude has stabilized
+                if (mov_avg_delta < ALT_DELTA_MAX_M) {
+                    standby_time = STANDBY_TIME_MAX_MS;
+                    flags |= FG_LANDED;
+                    en_auto_detect_landing = false;
+                }
+                prev_alt = payload.altitude;
             }
-            prev_alt = payload.altitude;
         }
         //clear buffer
         memset( buf_start, 0, MAX_BUF);
@@ -330,7 +340,9 @@ int main(void) {
 
         //don't loop if child
         if (cam_pid == 0) {
-            for(;;){}
+            for(;;) {
+                //sleep(10);
+            }
         }
 
         msleep(standby_time);
