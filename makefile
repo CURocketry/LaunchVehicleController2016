@@ -3,6 +3,7 @@ CC:=gcc
 CFLAGS:=-Wall -std=gnu99 -O3
 BUILDDIR:=build
 LIBDIR:=lib
+GPSCONF:=gps_conf
 
 APPFILEDIR:= /var/lib/crtlvc
 BINARYNAME:= crtlvc
@@ -25,6 +26,7 @@ install:
 	cp $(BINARYNAME)_initd /etc/init.d/$(BINARYNAME)
 	update-rc.d $(BINARYNAME) defaults
 	mkdir -p $(APPFILEDIR)
+	cp $(BUILDDIR)/$(GPSCONF) $(APPFILEDIR)
 	cp ./zlog.conf $(APPFILEDIR)
 	cp ./camera.py $(APPFILEDIR)
 	mkdir -p /var/log/$(BINARYNAME)

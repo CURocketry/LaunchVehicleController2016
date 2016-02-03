@@ -143,6 +143,11 @@ int main(void) {
         zlog_info(zl_data, "### Started new data logging session ###");
     }
     
+    // configure the attached gps
+    if (system("/var/lib/crtlvc/gps_conf) != 0) {
+        zlog_error(zl_prog,"Could not configure GPS.");
+    }
+
     //initialize the camera stuff
     cam_fpath = malloc(35);
     cam_fpath = "camera.py";
