@@ -54,7 +54,7 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
                     PyRun_SimpleFile(cam_f, cam_fpath);
                     Py_Finalize();
                     zlog_debug(zl_prog,"Child process done.");
-                    //todo kill when done
+                    exit(0);
                 }
                 cam_started = true;
             }
@@ -144,7 +144,7 @@ int main(void) {
     }
     
     // configure the attached gps
-    if (system("/var/lib/crtlvc/gps_conf) != 0) {
+    if (system("/var/lib/crtlvc/gps_conf") != 0) {
         zlog_error(zl_prog,"Could not configure GPS.");
     }
 
