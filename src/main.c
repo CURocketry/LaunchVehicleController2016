@@ -28,7 +28,7 @@ FILE* cam_f;
 char *cam_fpath;
 
 // landing autodetection
-#define ALT_OFFSET_CEIL_M 5000 //ceiling offset from current altitude
+#define ALT_OFFSET_CEIL_M 800 //ceiling offset from current altitude
 #define ALT_DELTA_MAX_M 10 //max fluctuation to determine landing condition 
 bool calibrate = false;
 int prev_alt = 0; //previous altitude
@@ -246,6 +246,7 @@ int main(void) {
                         (gps_data.fix.mode == MODE_2D || gps_data.fix.mode == MODE_3D) &&
                         !isnan(gps_data.fix.latitude) && 
                         !isnan(gps_data.fix.longitude)) {
+                            flags |= FG_GPS_FIX;
                             printf("latitude: %f, longitude: %f, speed: %f, altitude: %f\n", gps_data.fix.latitude, gps_data.fix.longitude, gps_data.fix.speed, gps_data.fix.altitude);
                             set_gps_payload(&payload, gps_data.fix);
                     } else {
