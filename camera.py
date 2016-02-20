@@ -1,6 +1,8 @@
 import picamera
 from time import sleep, gmtime
+import os.path
 
+FOLDER_PATH = '/var/lib/crtlvc/media'
 #
 # Duration of video capture, in seconds
 #
@@ -13,7 +15,7 @@ VIDEO_DURATION = 600
 def getCurrentTimeString ():
     tm = gmtime()
 
-    return "%04d-%02d-%02d_%02d:%02d:%02d" % \
+    return "%04d-%02d-%02d_%02d-%02d-%02d" % \
         (tm.tm_year,tm.tm_mon,tm.tm_mday,tm.tm_hour,
         tm.tm_min,tm.tm_sec)
 
@@ -43,12 +45,12 @@ try:
     #
     # Take initial image
     #
-    camera.capture('init_image_' + getCurrentTimeString() + '.jpg')
+    camera.capture(os.path.join(FOLDER_PATH,'init_image_' + getCurrentTimeString() + '.jpg'))
 
     #
     # Capture video
     #
-    camera.start_recording('video_' + getCurrentTimeString() + '.h264')
+    camera.start_recording(os.path.join(FOLDER_PATH,'video_' + getCurrentTimeString() + '.h264'))
 
     #
     # Wait predetermined amount of time
@@ -65,4 +67,4 @@ finally: #finally clause to stop recording if interrupted during sleep
     #
     # Take final image
     #
-    camera.capture('fin_image_' + getCurrentTimeString())
+    camera.capture(os.path.join(FOLDER_PATH,'fin_image_' + getCurrentTimeString() + '.jpg'))

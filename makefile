@@ -26,6 +26,7 @@ install:
 	cp $(BINARYNAME)_initd /etc/init.d/$(BINARYNAME)
 	update-rc.d $(BINARYNAME) defaults
 	mkdir -p $(APPFILEDIR)
+	mkdir -p $(APPFILEDIR)/media
 	cp $(BUILDDIR)/$(GPSCONF) $(APPFILEDIR)
 	cp ./zlog.conf $(APPFILEDIR)
 	cp ./camera.py $(APPFILEDIR)
