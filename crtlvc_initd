@@ -18,7 +18,7 @@
 
 # Do NOT "set -e"
 
-sleep 10
+sleep 20
 
 # PATH should only include /usr/* if it runs after the mountnfs.sh script
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
