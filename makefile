@@ -1,6 +1,6 @@
 PROG?=main
 CC:=gcc
-CFLAGS:=-Wall -std=gnu99 -O3
+CFLAGS:=-Wall -std=gnu99 -O1
 BUILDDIR:=build
 LIBDIR:=lib
 GPSCONF:=gps_conf
@@ -49,7 +49,7 @@ COMPLIBS = $(wildcard $(BUILDDIR)/$(LIBDIR)/*.o)
 
 $(PROG): src/$(PROG).c
 	$(CC) $(filter %.c, $^) -o build/$@ -lxbee -lpthread -lrt -lgps \
-		-lwiringPi -lada10dof -lzlog -lpython2.7\
+		-lwiringPi -lada10dof -lzlog -lpthread -lpython2.7\
 		-I. -Ilib -I/usr/lib -Iusr/include/python2.7 $(COMPLIBS) $(CFLAGS) -lm
 	cp ./zlog.conf $(BUILDDIR)
 	cp ./camera.py $(BUILDDIR)

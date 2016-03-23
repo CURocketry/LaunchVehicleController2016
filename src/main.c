@@ -1,4 +1,5 @@
 #include "main.h"
+#include <pthread.h>
 
 //#define DEBUG_IGNORE_GPS
 //#define DEBUG_IGNORE_IMU
@@ -7,8 +8,8 @@ int zl_conf;
 zlog_category_t *zl_prog;
 zlog_category_t *zl_data;
 
-#define STANDBY_TIME_MIN_MS 150 //delay between tranmissions in ms
-#define STANDBY_TIME_MAX_MS 150 //5000 
+#define STANDBY_TIME_MIN_MS 450 //delay between tranmissions in ms
+#define STANDBY_TIME_MAX_MS 500 //5000 
 int standby_time = STANDBY_TIME_MAX_MS;
 
 //Payload variables
@@ -21,6 +22,7 @@ Payload* ptr_payload = &payload;
 bool connected;
 bool transmit = true; //whether to transmit data
 
+int xbee_ret;
 //camera stuff
 pid_t cam_pid = -1;
 bool cam_started;
@@ -36,6 +38,8 @@ int alt_calib = 0;
 int mov_avg_delta = 0; //moving average of change in altitude
 bool en_auto_detect_landing  = false;
 bool exceed_ceiling = false;
+
+bool has_gps;
 
 //receiving callback
 void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data) {
@@ -106,20 +110,115 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
 	}
 }
 
-int main(void) { 
-    int buf_size; //actual size of buffer
+int main_xbee(void *threadid) {
     byte* buf_start = (byte*) malloc( MAX_BUF * sizeof(byte) ); //allocate starting payload pointer
-    struct gps_data_t gps_data; 
+    int buf_size; //actual size of buffer
     struct xbee *xbee;
     struct xbee_con *con;
     struct xbee_conAddress address;
     xbee_err ret;
     connected = false;
+    has_gps = false;
+    
+    Payload* send_payload = malloc(sizeof(Payload));
+    flags_t send_flags;
+
+    // initialize the address of the remote xbee
+    memset(&address, 0, sizeof(address));
+	address.addr64_enabled = 1;
+	address.addr64[0] = 0x00;
+	address.addr64[1] = 0x13;
+	address.addr64[2] = 0xA2;
+	address.addr64[3] = 0x00;
+	address.addr64[4] = 0x40;
+	address.addr64[5] = 0xBF;
+	address.addr64[6] = 0x56;
+	address.addr64[7] = 0xA5;
+    
+    if ((xbee_ret = _xbee_startup(&xbee, &con, &address)) != XBEE_ENONE) {
+        pthread_exit(&xbee_ret);
+    }
+    
+    for (;;) {
+        send_flags = flags;
+    memcpy( send_payload, ptr_payload, sizeof(Payload));
+    if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
+
+        //clear buffer
+        memset( buf_start, 0, MAX_BUF);
+
+        //buf_start is pointer to first allocated space
+        byte* buf_curr; //current position of buffer
+        buf_curr = stream(buf_start, &(send_payload->latitude), sizeof(payload.latitude));
+        buf_curr = stream(buf_curr,&(send_payload->longitude), sizeof(payload.longitude));
+        buf_curr = stream(buf_curr,&(send_payload->altitude), sizeof(payload.altitude));
+        buf_curr = stream(buf_curr,&(send_flags), sizeof(payload.flags));
+        buf_curr = stream(buf_curr,&(send_payload->gyro_x), sizeof(payload.gyro_z));
+        buf_curr = stream(buf_curr,&(send_payload->acc_z), sizeof(payload.acc_z));
+        buf_curr = stream(buf_curr,&(send_payload->acc_x), sizeof(payload.acc_x));
+        buf_curr = stream(buf_curr,&(send_payload->acc_y), sizeof(payload.acc_y));
+        buf_curr = stream(buf_curr,&(send_payload->temp), sizeof(payload.temp));
+
+        //buffer size is the difference between the current and start pointers
+        buf_size = buf_curr - buf_start;
+        //rpi is little endian (LSB first)
+        unsigned char retVal;
+        if (connected) {
+            if (transmit && has_gps) {
+                if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
+                    if (ret == XBEE_ETX) {
+                        zlog_error(zl_prog, "xbee tx error: 0x%02X",retVal);
+                    } 
+                    else if (ret == XBEE_ETIMEOUT || ret == XBEE_EINUSE || ret == XBEE_EINVAL) {
+                        // timeout workaround - disconnect and reconnect
+                        zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
+                        //xbee_conEnd(con);
+                        //xbee_shutdown(xbee);
+                        //connected = false;
+                        //xbee_conCallbackSet(con, NULL, NULL);
+                        ////usleep(50000);
+                        //sleep(5);
+                        //_xbee_startup(&xbee,&con,&address);
+                    }
+                    else {
+                        zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
+                    }
+                }
+            }
+        }
+        else {
+            _xbee_startup(&xbee,&con,&address);
+        }
+    
+        //don't loop if child
+        if (cam_pid == 0) {
+            pthread_exit(NULL);
+            //for(;;) {
+                //sleep(10);
+            //}
+        }
+
+    }    
+        //printh(buf_start, buf_size);
+        msleep(standby_time);
+    }
+
+	if ((ret = xbee_conEnd(con)) != XBEE_ENONE) {
+		xbee_log(xbee, -1, "xbee_conEnd() returned: %d", ret);
+		return ret;
+	}
+}
+
+int main(void) { 
+    struct gps_data_t gps_data; 
     struct gyro_t *gyro;
     struct accel_t *accel;
     struct bmp_t *bmp;
     bool has_gps = false;
 
+    int ret;
+    long t;
+    pthread_t xbee_th;
     // Init logger
     zl_conf = zlog_init("zlog.conf");
     if (zl_conf) {
@@ -127,7 +226,7 @@ int main(void) {
         zl_conf = zlog_init("/var/lib/crtlvc/zlog.conf");
         if (zl_conf) {
             printf("Could not find zlog conf!\n");
-            return -2;
+            //return -2;
         }
     }
 
@@ -136,7 +235,7 @@ int main(void) {
     if (!zl_data || !zl_prog) {
         printf("Error getting zlog categories!\n");
         zlog_fini();
-        return -2;
+        //return -2;
     }
     else {
         printf("zlog initialized\n");
@@ -164,6 +263,8 @@ int main(void) {
         zlog_info(zl_prog,"Camera script located.");
         init_status |= (1 << INIT_CAMERA);
     }
+
+    int rc = pthread_create(&xbee_th, NULL, (void*)&main_xbee, (void*)&t);
 
 #ifndef DEBUG_IGNORE_IMU
     if (gyro_create(&gyro, 0, GYRO_RANGE_2000DPS)) {
@@ -207,21 +308,6 @@ int main(void) {
 #endif
    
    
-    // initialize the address of the remote xbee
-    memset(&address, 0, sizeof(address));
-	address.addr64_enabled = 1;
-	address.addr64[0] = 0x00;
-	address.addr64[1] = 0x13;
-	address.addr64[2] = 0xA2;
-	address.addr64[3] = 0x00;
-	address.addr64[4] = 0x40;
-	address.addr64[5] = 0xBF;
-	address.addr64[6] = 0x56;
-	address.addr64[7] = 0xA5;
-    
-    if ((ret = _xbee_startup(&xbee, &con, &address)) != XBEE_ENONE) {
-        return ret;
-    }
   
     for (;;) {
 
@@ -290,7 +376,7 @@ int main(void) {
                 exceed_ceiling = true;
             }
             if (exceed_ceiling) {
-                const int mov_avg_pd = 16;
+                const int mov_avg_pd = 128;
                 mov_avg_delta = mov_avg_delta + (payload.altitude - prev_alt) - mov_avg_delta / mov_avg_pd;
                 mov_avg_delta = mov_avg_delta / mov_avg_pd;
                 
@@ -303,54 +389,7 @@ int main(void) {
                 prev_alt = payload.altitude;
             }
         }
-        //clear buffer
-        memset( buf_start, 0, MAX_BUF);
 
-        //buf_start is pointer to first allocated space
-        byte* buf_curr; //current position of buffer
-        buf_curr = stream(buf_start, &(ptr_payload->latitude), sizeof(payload.latitude));
-        buf_curr = stream(buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
-        buf_curr = stream(buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
-        buf_curr = stream(buf_curr,&(flags), sizeof(payload.flags));
-        buf_curr = stream(buf_curr,&(ptr_payload->gyro_x), sizeof(payload.gyro_z));
-        buf_curr = stream(buf_curr,&(ptr_payload->acc_z), sizeof(payload.acc_z));
-        buf_curr = stream(buf_curr,&(ptr_payload->acc_x), sizeof(payload.acc_x));
-        buf_curr = stream(buf_curr,&(ptr_payload->acc_y), sizeof(payload.acc_y));
-        buf_curr = stream(buf_curr,&(ptr_payload->temp), sizeof(payload.temp));
-
-        //buffer size is the difference between the current and start pointers
-        buf_size = buf_curr - buf_start;
-        
-        printh(buf_start, buf_size);
-
-        //rpi is little endian (LSB first)
-        unsigned char retVal;
-        if (connected) {
-            if (transmit && has_gps) {
-                if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
-                    if (ret == XBEE_ETX) {
-                        zlog_error(zl_prog, "xbee tx error: 0x%02X",retVal);
-                    } 
-                    else if (ret == XBEE_ETIMEOUT || ret == XBEE_EINUSE || ret == XBEE_EINVAL) {
-                        // timeout workaround - disconnect and reconnect
-                        zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
-                        xbee_conEnd(con);
-                        xbee_shutdown(xbee);
-                        connected = false;
-                        xbee_conCallbackSet(con, NULL, NULL);
-                        //usleep(50000);
-                        sleep(5);
-                        _xbee_startup(&xbee,&con,&address);
-                    }
-                    else {
-                        zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
-                    }
-                }
-            }
-        }
-        else {
-            _xbee_startup(&xbee,&con,&address);
-        }
 
         //don't loop if child
         if (cam_pid == 0) {
@@ -359,15 +398,11 @@ int main(void) {
             }
         }
 
-        msleep(standby_time);
+        msleep(250);
         
     }
 
 
-	if ((ret = xbee_conEnd(con)) != XBEE_ENONE) {
-		xbee_log(xbee, -1, "xbee_conEnd() returned: %d", ret);
-		return ret;
-	}
 
 
 #ifndef DEBUG_IGNORE_GPS
@@ -377,7 +412,7 @@ int main(void) {
     }
 #endif
 	
-    xbee_shutdown(xbee);
+    //xbee_shutdown(xbee);
     zlog_fini();
 	return 0;
 }
@@ -417,7 +452,7 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
 	}
 
     xbee_conSettings(*con, NULL, &conset);
-    conset.noWaitForAck = 0;
+    conset.noWaitForAck = 1;
     xbee_conSettings(*con,  &conset, NULL);
 
 	if ((ret = xbee_conCallbackSet(*con, cbReceive, NULL)) != XBEE_ENONE) {
