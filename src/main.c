@@ -8,8 +8,8 @@ int zl_conf;
 zlog_category_t *zl_prog;
 zlog_category_t *zl_data;
 
-#define STANDBY_TIME_MIN_MS 150 //delay between tranmissions in ms
-#define STANDBY_TIME_MAX_MS 150 //5000 
+#define STANDBY_TIME_MIN_MS 450 //delay between tranmissions in ms
+#define STANDBY_TIME_MAX_MS 500 //5000 
 int standby_time = STANDBY_TIME_MAX_MS;
 
 //Payload variables
@@ -39,10 +39,8 @@ int mov_avg_delta = 0; //moving average of change in altitude
 bool en_auto_detect_landing  = false;
 bool exceed_ceiling = false;
 
-
-    int buf_size; //actual size of buffer
-
 bool has_gps;
+
 //receiving callback
 void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data) {
     if ((*pkt)->dataLen > 0) {
@@ -114,6 +112,7 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
 
 int main_xbee(void *threadid) {
     byte* buf_start = (byte*) malloc( MAX_BUF * sizeof(byte) ); //allocate starting payload pointer
+    int buf_size; //actual size of buffer
     struct xbee *xbee;
     struct xbee_con *con;
     struct xbee_conAddress address;
@@ -162,7 +161,7 @@ int main_xbee(void *threadid) {
 
         //buffer size is the difference between the current and start pointers
         buf_size = buf_curr - buf_start;
-    //rpi is little endian (LSB first)
+        //rpi is little endian (LSB first)
         unsigned char retVal;
         if (connected) {
             if (transmit && has_gps) {
@@ -173,13 +172,13 @@ int main_xbee(void *threadid) {
                     else if (ret == XBEE_ETIMEOUT || ret == XBEE_EINUSE || ret == XBEE_EINVAL) {
                         // timeout workaround - disconnect and reconnect
                         zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
-                        xbee_conEnd(con);
-                        xbee_shutdown(xbee);
-                        connected = false;
-                        xbee_conCallbackSet(con, NULL, NULL);
-                        //usleep(50000);
-                        sleep(5);
-                        _xbee_startup(&xbee,&con,&address);
+                        //xbee_conEnd(con);
+                        //xbee_shutdown(xbee);
+                        //connected = false;
+                        //xbee_conCallbackSet(con, NULL, NULL);
+                        ////usleep(50000);
+                        //sleep(5);
+                        //_xbee_startup(&xbee,&con,&address);
                     }
                     else {
                         zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
@@ -264,7 +263,8 @@ int main(void) {
         init_status |= (1 << INIT_CAMERA);
     }
 
-    int rc = pthread_create(&xbee_th,NULL, (void*)&main_xbee, (void*)&t);
+    int rc = pthread_create(&xbee_th, NULL, (void*)&main_xbee, (void*)&t);
+
 #ifndef DEBUG_IGNORE_IMU
     if (gyro_create(&gyro, 0, GYRO_RANGE_2000DPS)) {
         gyro_enableAutoRange(gyro, true);
@@ -375,7 +375,7 @@ int main(void) {
                 exceed_ceiling = true;
             }
             if (exceed_ceiling) {
-                const int mov_avg_pd = 16;
+                const int mov_avg_pd = 128;
                 mov_avg_delta = mov_avg_delta + (payload.altitude - prev_alt) - mov_avg_delta / mov_avg_pd;
                 mov_avg_delta = mov_avg_delta / mov_avg_pd;
                 
@@ -451,7 +451,7 @@ int  _xbee_startup(struct xbee **xbee, struct xbee_con **con, struct xbee_conAdd
 	}
 
     xbee_conSettings(*con, NULL, &conset);
-    conset.noWaitForAck = 0;
+    conset.noWaitForAck = 1;
     xbee_conSettings(*con,  &conset, NULL);
 
 	if ((ret = xbee_conCallbackSet(*con, cbReceive, NULL)) != XBEE_ENONE) {
