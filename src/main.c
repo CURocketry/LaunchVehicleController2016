@@ -7,8 +7,8 @@ int zl_conf;
 zlog_category_t *zl_prog;
 zlog_category_t *zl_data;
 
-#define STANDBY_TIME_MIN_MS 300 //delay between tranmissions in ms
-#define STANDBY_TIME_MAX_MS 5000 
+#define STANDBY_TIME_MIN_MS 150 //delay between tranmissions in ms
+#define STANDBY_TIME_MAX_MS 150 //5000 
 int standby_time = STANDBY_TIME_MAX_MS;
 
 //Payload variables
@@ -118,6 +118,7 @@ int main(void) {
     struct gyro_t *gyro;
     struct accel_t *accel;
     struct bmp_t *bmp;
+    bool has_gps = false;
 
     // Init logger
     zl_conf = zlog_init("zlog.conf");
@@ -249,11 +250,16 @@ int main(void) {
                             flags |= FG_GPS_FIX;
                             printf("latitude: %f, longitude: %f, speed: %f, altitude: %f\n", gps_data.fix.latitude, gps_data.fix.longitude, gps_data.fix.speed, gps_data.fix.altitude);
                             set_gps_payload(&payload, gps_data.fix);
+                            has_gps = true;
                     } else {
                         zlog_debug(zl_prog,"no GPS data available.\n");
+                        has_gps = false;
                     }
                 }
             }
+        }
+        if (payload.latitude == 0 || payload.longitude == 0) {
+            has_gps = false;
         }
 #endif
 
@@ -262,9 +268,11 @@ int main(void) {
 #endif    
 
         //log flight data
+        if (has_gps) {
         zlog_info(zl_data,"%i,%i,%i,%i,%i,%i,%i,%i,%i,%i",payload.latitude,payload.longitude,
                 payload.altitude,payload.gyro_x,payload.gyro_y,payload.gyro_z,payload.acc_x,
                 payload.acc_y,payload.acc_z,payload.temp);
+        }
 
         //calibrate - set the altitude ceiling
         if (calibrate) {
@@ -304,7 +312,7 @@ int main(void) {
         buf_curr = stream(buf_curr,&(ptr_payload->longitude), sizeof(payload.longitude));
         buf_curr = stream(buf_curr,&(ptr_payload->altitude), sizeof(payload.altitude));
         buf_curr = stream(buf_curr,&(flags), sizeof(payload.flags));
-        buf_curr = stream(buf_curr,&(ptr_payload->gyro_z), sizeof(payload.gyro_z));
+        buf_curr = stream(buf_curr,&(ptr_payload->gyro_x), sizeof(payload.gyro_z));
         buf_curr = stream(buf_curr,&(ptr_payload->acc_z), sizeof(payload.acc_z));
         buf_curr = stream(buf_curr,&(ptr_payload->acc_x), sizeof(payload.acc_x));
         buf_curr = stream(buf_curr,&(ptr_payload->acc_y), sizeof(payload.acc_y));
@@ -318,7 +326,7 @@ int main(void) {
         //rpi is little endian (LSB first)
         unsigned char retVal;
         if (connected) {
-            if (transmit) {
+            if (transmit && has_gps) {
                 if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
                     if (ret == XBEE_ETX) {
                         zlog_error(zl_prog, "xbee tx error: 0x%02X",retVal);
