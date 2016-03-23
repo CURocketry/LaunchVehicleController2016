@@ -141,7 +141,7 @@ int main_xbee(void *threadid) {
     for (;;) {
         send_flags = flags;
         memcpy( send_payload, ptr_payload, sizeof(Payload));
-        if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
+        //if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
 
         //clear buffer
         memset( buf_start, 0, MAX_BUF);
@@ -183,7 +183,7 @@ int main_xbee(void *threadid) {
                         zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
                     }
                 }
-            }
+           // }
         }
         else {
             _xbee_startup(&xbee,&con,&address);
