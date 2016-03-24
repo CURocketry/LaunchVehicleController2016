@@ -118,7 +118,6 @@ int main_xbee(void *threadid) {
     struct xbee_conAddress address;
     xbee_err ret;
     connected = false;
-    has_gps = false;
     
     Payload* send_payload = malloc(sizeof(Payload));
     flags_t send_flags;
@@ -141,8 +140,8 @@ int main_xbee(void *threadid) {
     
     for (;;) {
         send_flags = flags;
-    memcpy( send_payload, ptr_payload, sizeof(Payload));
-    if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
+        memcpy( send_payload, ptr_payload, sizeof(Payload));
+        if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
 
         //clear buffer
         memset( buf_start, 0, MAX_BUF);
@@ -164,7 +163,7 @@ int main_xbee(void *threadid) {
         //rpi is little endian (LSB first)
         unsigned char retVal;
         if (connected) {
-            if (transmit && has_gps) {
+            if (transmit) {
                 if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
                     if (ret == XBEE_ETX) {
                         zlog_error(zl_prog, "xbee tx error: 0x%02X",retVal);
@@ -214,7 +213,6 @@ int main(void) {
     struct gyro_t *gyro;
     struct accel_t *accel;
     struct bmp_t *bmp;
-    bool has_gps = false;
 
     int ret;
     long t;
@@ -354,11 +352,11 @@ int main(void) {
 #endif    
 
         //log flight data
-        if (has_gps) {
+        //if (has_gps) {
         zlog_info(zl_data,"%i,%i,%i,%i,%i,%i,%i,%i,%i,%i",payload.latitude,payload.longitude,
                 payload.altitude,payload.gyro_x,payload.gyro_y,payload.gyro_z,payload.acc_x,
                 payload.acc_y,payload.acc_z,payload.temp);
-        }
+        //}
 
         //calibrate - set the altitude ceiling
         if (calibrate) {
