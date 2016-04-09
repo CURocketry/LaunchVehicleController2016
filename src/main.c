@@ -110,7 +110,7 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
 	}
 }
 
-int main_xbee(void *threadid) {
+int main_xbee(void) {
     byte* buf_start = (byte*) malloc( MAX_BUF * sizeof(byte) ); //allocate starting payload pointer
     int buf_size; //actual size of buffer
     struct xbee *xbee;
@@ -199,7 +199,8 @@ int main_xbee(void *threadid) {
 
     }    
         //printh(buf_start, buf_size);
-        msleep(standby_time);
+        
+        //msleep(standby_time);
     }
 
 	if ((ret = xbee_conEnd(con)) != XBEE_ENONE) {
@@ -262,7 +263,7 @@ int main(void) {
         init_status |= (1 << INIT_CAMERA);
     }
 
-    int rc = pthread_create(&xbee_th, NULL, (void*)&main_xbee, (void*)&t);
+    //int rc = pthread_create(&xbee_th, NULL, (void*)&main_xbee, (void*)&t);
 
 #ifndef DEBUG_IGNORE_IMU
     if (gyro_create(&gyro, 0, GYRO_RANGE_2000DPS)) {
@@ -374,7 +375,7 @@ int main(void) {
                 exceed_ceiling = true;
             }
             if (exceed_ceiling) {
-                const int mov_avg_pd = 128;
+                const int mov_avg_pd = 128 << 2;
                 mov_avg_delta = mov_avg_delta + (payload.altitude - prev_alt) - mov_avg_delta / mov_avg_pd;
                 mov_avg_delta = mov_avg_delta / mov_avg_pd;
                 
@@ -388,6 +389,7 @@ int main(void) {
             }
         }
 
+        main_xbee();
 
         //don't loop if child
         if (cam_pid == 0) {
@@ -396,7 +398,7 @@ int main(void) {
             }
         }
 
-        msleep(250);
+        //msleep(250);
         
     }
 
