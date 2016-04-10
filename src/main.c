@@ -14,11 +14,13 @@ int standby_time = STANDBY_TIME_MAX_MS;
 
 //Payload variables
 #define MAX_BUF 32  // Maximum payload size 
+byte* buf_start;
 
 init_ok_t init_status;
 Payload payload;
 flags_t flags;
 Payload* ptr_payload = &payload;
+Payload* send_payload = malloc(sizeof(Payload));
 bool connected = false;
 bool transmit = true; //whether to transmit data
 
@@ -40,7 +42,10 @@ bool en_auto_detect_landing  = false;
 bool exceed_ceiling = false;
 
 bool has_gps;
-
+struct xbee *xbee;
+struct xbee_con *con;
+struct xbee_conAddress address;
+	
 //receiving callback
 void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, void **data) {
     if ((*pkt)->dataLen > 0) {
@@ -110,40 +115,10 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
 	}
 }
 
-int main_xbee(void) {
-    byte* buf_start = (byte*) malloc( MAX_BUF * sizeof(byte) ); //allocate starting payload pointer
-    int buf_size; //actual size of buffer
-    struct xbee *xbee;
-    struct xbee_con *con;
-    struct xbee_conAddress address;
-    xbee_err ret;
-    //connected = false;
-    
-    Payload* send_payload = malloc(sizeof(Payload));
-    flags_t send_flags;
-
-    // initialize the address of the remote xbee
-    memset(&address, 0, sizeof(address));
-	address.addr64_enabled = 1;
-	address.addr64[0] = 0x00;
-	address.addr64[1] = 0x13;
-	address.addr64[2] = 0xA2;
-	address.addr64[3] = 0x00;
-	address.addr64[4] = 0x40;
-	address.addr64[5] = 0xBF;
-	address.addr64[6] = 0x56;
-	address.addr64[7] = 0xA5;
-    
-    if ((xbee_ret = _xbee_startup(&xbee, &con, &address)) != XBEE_ENONE) {
-        return xbee_ret;
-		//pthread_exit(&xbee_ret);
-    }
-    
-        send_flags = flags;
-        memcpy( send_payload, ptr_payload, sizeof(Payload));
-        //if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
-
-        //clear buffer
+int xbee_loop(void) {
+	int buf_size; //actual size of buffer
+	xbee_err ret;
+	//clear buffer
         memset( buf_start, 0, MAX_BUF);
 
         //buf_start is pointer to first allocated space
@@ -162,7 +137,6 @@ int main_xbee(void) {
         buf_size = buf_curr - buf_start;
         //rpi is little endian (LSB first)
         unsigned char retVal;
-        if (connected) {
             if (transmit) {
                 if ((ret = xbee_connTx(con, &retVal, buf_start, buf_size)) != XBEE_ENONE) {
                     if (ret == XBEE_ETX) {
@@ -184,10 +158,6 @@ int main_xbee(void) {
                     }
                 }
            }
-        }
-        else {
-            _xbee_startup(&xbee,&con,&address);
-        }
     
         //don't loop if child
         //if (cam_pid == 0) {
@@ -198,14 +168,47 @@ int main_xbee(void) {
         //}
 
     //}    
+}
+
+int main_xbee(void) {
+    buf_start = (byte*) malloc( MAX_BUF * sizeof(byte) ); //allocate starting payload pointer
+
+    xbee_err ret;
+    //connected = false;
+    
+    
+    flags_t send_flags;
+
+    // initialize the address of the remote xbee
+    memset(&address, 0, sizeof(address));
+	address.addr64_enabled = 1;
+	address.addr64[0] = 0x00;
+	address.addr64[1] = 0x13;
+	address.addr64[2] = 0xA2;
+	address.addr64[3] = 0x00;
+	address.addr64[4] = 0x40;
+	address.addr64[5] = 0xBF;
+	address.addr64[6] = 0x56;
+	address.addr64[7] = 0xA5;
+    
+    if ((xbee_ret = _xbee_startup(&xbee, &con, &address)) != XBEE_ENONE) {
+        return xbee_ret;
+		//pthread_exit(&xbee_ret);
+    }
+    
+        //send_flags = flags;
+        //memcpy( send_payload, ptr_payload, sizeof(Payload));
+        //if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
+
+        
         //printh(buf_start, buf_size);
         
         //msleep(standby_time);
 
-	if ((ret = xbee_conEnd(con)) != XBEE_ENONE) {
+	/*if ((ret = xbee_conEnd(con)) != XBEE_ENONE) {
 		xbee_log(xbee, -1, "xbee_conEnd() returned: %d", ret);
 		return ret;
-	}
+	}*/
     return 0;
 }
 
