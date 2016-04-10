@@ -138,7 +138,6 @@ int main_xbee(void) {
         pthread_exit(&xbee_ret);
     }
     
-    for (;;) {
         send_flags = flags;
         memcpy( send_payload, ptr_payload, sizeof(Payload));
         //if (!(send_payload->latitude == 0 && send_payload->longitude == 0)) {
@@ -201,12 +200,12 @@ int main_xbee(void) {
         //printh(buf_start, buf_size);
         
         //msleep(standby_time);
-    }
 
 	if ((ret = xbee_conEnd(con)) != XBEE_ENONE) {
 		xbee_log(xbee, -1, "xbee_conEnd() returned: %d", ret);
 		return ret;
 	}
+    return 0;
 }
 
 int main(void) { 
@@ -216,8 +215,8 @@ int main(void) {
     struct bmp_t *bmp;
 
     int ret;
-    long t;
-    pthread_t xbee_th;
+    //long t;
+    //pthread_t xbee_th;
     // Init logger
     zl_conf = zlog_init("zlog.conf");
     if (zl_conf) {
