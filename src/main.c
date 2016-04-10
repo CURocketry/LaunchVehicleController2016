@@ -19,7 +19,7 @@ init_ok_t init_status;
 Payload payload;
 flags_t flags;
 Payload* ptr_payload = &payload;
-bool connected;
+bool connected = false;
 bool transmit = true; //whether to transmit data
 
 int xbee_ret;
@@ -117,7 +117,7 @@ int main_xbee(void) {
     struct xbee_con *con;
     struct xbee_conAddress address;
     xbee_err ret;
-    connected = false;
+    //connected = false;
     
     Payload* send_payload = malloc(sizeof(Payload));
     flags_t send_flags;
@@ -135,7 +135,8 @@ int main_xbee(void) {
 	address.addr64[7] = 0xA5;
     
     if ((xbee_ret = _xbee_startup(&xbee, &con, &address)) != XBEE_ENONE) {
-        pthread_exit(&xbee_ret);
+        return xbee_ret;
+		//pthread_exit(&xbee_ret);
     }
     
         send_flags = flags;
@@ -182,21 +183,21 @@ int main_xbee(void) {
                         zlog_error(zl_prog, "xbee tx error: %s", xbee_errorToStr(ret));
                     }
                 }
-           // }
+           }
         }
         else {
             _xbee_startup(&xbee,&con,&address);
         }
     
         //don't loop if child
-        if (cam_pid == 0) {
-            pthread_exit(NULL);
+        //if (cam_pid == 0) {
+        //    pthread_exit(NULL);
             //for(;;) {
                 //sleep(10);
             //}
-        }
+        //}
 
-    }    
+    //}    
         //printh(buf_start, buf_size);
         
         //msleep(standby_time);
