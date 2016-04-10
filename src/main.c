@@ -20,7 +20,6 @@ init_ok_t init_status;
 Payload payload;
 flags_t flags;
 Payload* ptr_payload = &payload;
-Payload* send_payload = malloc(sizeof(Payload));
 bool connected = false;
 bool transmit = true; //whether to transmit data
 
@@ -115,7 +114,7 @@ void cbReceive(struct xbee *xbee, struct xbee_con *con, struct xbee_pkt **pkt, v
 	}
 }
 
-int xbee_loop(void) {
+int loop_xbee(void) {
 	int buf_size; //actual size of buffer
 	xbee_err ret;
 	//clear buffer
@@ -123,15 +122,15 @@ int xbee_loop(void) {
 
         //buf_start is pointer to first allocated space
         byte* buf_curr; //current position of buffer
-        buf_curr = stream(buf_start, &(send_payload->latitude), sizeof(payload.latitude));
-        buf_curr = stream(buf_curr,&(send_payload->longitude), sizeof(payload.longitude));
-        buf_curr = stream(buf_curr,&(send_payload->altitude), sizeof(payload.altitude));
-        buf_curr = stream(buf_curr,&(send_flags), sizeof(payload.flags));
-        buf_curr = stream(buf_curr,&(send_payload->gyro_x), sizeof(payload.gyro_z));
-        buf_curr = stream(buf_curr,&(send_payload->acc_z), sizeof(payload.acc_z));
-        buf_curr = stream(buf_curr,&(send_payload->acc_x), sizeof(payload.acc_x));
-        buf_curr = stream(buf_curr,&(send_payload->acc_y), sizeof(payload.acc_y));
-        buf_curr = stream(buf_curr,&(send_payload->temp), sizeof(payload.temp));
+        buf_curr = stream(buf_start, &(payload.latitude), sizeof(payload.latitude));
+        buf_curr = stream(buf_curr,&(payload.longitude), sizeof(payload.longitude));
+        buf_curr = stream(buf_curr,&(payload.altitude), sizeof(payload.altitude));
+        buf_curr = stream(buf_curr,&(flags), sizeof(payload.flags));
+        buf_curr = stream(buf_curr,&(payload.gyro_x), sizeof(payload.gyro_z));
+        buf_curr = stream(buf_curr,&(payload.acc_z), sizeof(payload.acc_z));
+        buf_curr = stream(buf_curr,&(payload.acc_x), sizeof(payload.acc_x));
+        buf_curr = stream(buf_curr,&(payload.acc_y), sizeof(payload.acc_y));
+        buf_curr = stream(buf_curr,&(payload.temp), sizeof(payload.temp));
 
         //buffer size is the difference between the current and start pointers
         buf_size = buf_curr - buf_start;
@@ -167,7 +166,8 @@ int xbee_loop(void) {
             //}
         //}
 
-    //}    
+    //}   
+    return 0;
 }
 
 int main_xbee(void) {
@@ -309,7 +309,7 @@ int main(void) {
 
 #endif
    
-   
+   main_xbee();
   
     for (;;) {
 
@@ -392,7 +392,7 @@ int main(void) {
             }
         }
 
-        main_xbee();
+        loop_xbee();
 
         //don't loop if child
         if (cam_pid == 0) {
